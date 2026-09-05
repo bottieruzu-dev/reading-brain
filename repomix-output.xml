@@ -1,0 +1,3184 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.claude/
+  settings.json
+assets/
+  android-icon-background.png
+  android-icon-foreground.png
+  android-icon-monochrome.png
+  favicon.png
+  icon.png
+  splash-icon.png
+public/
+  _redirects
+src/
+  app/
+    (tabs)/
+      _layout.tsx
+      index.tsx
+      memos.tsx
+      prompt.tsx
+      review.tsx
+    book/
+      [id].tsx
+    _layout.tsx
+    settings.tsx
+  components/
+    Login.tsx
+    MemoCard.tsx
+    MemoSheet.tsx
+    ui.tsx
+  lib/
+    aiTagging.ts
+    booksApi.ts
+    cloudinary.ts
+    firebase.ts
+    order.ts
+    settings.ts
+    srs.ts
+    store.tsx
+    theme.ts
+    types.ts
+.gitignore
+AGENTS.md
+app.json
+CLAUDE.md
+LICENSE
+metro.config.js
+package.json
+repomix実行.bat
+tsconfig.json
+これまでのAIとのやりとり
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".claude/settings.json">
+{
+  "enabledPlugins": {
+    "expo@claude-plugins-official": true
+  }
+}
+</file>
+
+<file path="public/_redirects">
+/*    /index.html   200
+</file>
+
+<file path="src/app/(tabs)/_layout.tsx">
+// File: src/app/(tabs)/_layout.tsx
+import React from 'react';
+import { Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { C } from '../../lib/theme';
+import { useData } from '../../lib/store';
+import { dueCount } from '../../lib/srs';
+
+export default function TabsLayout() {
+  const { memos } = useData();
+  const due = dueCount(memos);
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: C.cyan,
+        tabBarInactiveTintColor: C.sub,
+        tabBarStyle: {
+          backgroundColor: '#100E22',
+          borderTopColor: C.line,
+          borderTopWidth: 1,
+          height: 62,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+        tabBarLabelStyle: { fontSize: 10.5, fontWeight: '700' },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{ title: '本棚', tabBarIcon: ({ color, size }) => <Ionicons name="library" size={size} color={color} /> }}
+      />
+      <Tabs.Screen
+        name="memos"
+        options={{ title: '横断メモ', tabBarIcon: ({ color, size }) => <Ionicons name="documents" size={size} color={color} /> }}
+      />
+      <Tabs.Screen
+        name="review"
+        options={{
+          title: '復習',
+          tabBarBadge: due > 0 ? (due > 99 ? '99+' : due) : undefined,
+          tabBarBadgeStyle: { backgroundColor: C.pink, color: '#0B0A14', fontWeight: '900' },
+          tabBarIcon: ({ color, size }) => <Ionicons name="flash" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="prompt"
+        options={{ title: 'AI活用', tabBarIcon: ({ color, size }) => <Ionicons name="sparkles" size={size} color={color} /> }}
+      />
+    </Tabs>
+  );
+}
+</file>
+
+<file path="src/app/(tabs)/index.tsx">
+// File: src/app/(tabs)/index.tsx
+import React, { useMemo, useState } from 'react';
+import { FlatList, Image, Pressable, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { Btn, Chip, Field, Press, Screen, SearchBar, Sheet, Title, Empty, useToast } from '../../components/ui';
+import { C, GRAD_MAIN, R, STATUS_COLOR, STATUS_LABEL } from '../../lib/theme';
+import { parseTags, uniqueTags, useData } from '../../lib/store';
+import { dueCount } from '../../lib/srs';
+import { fetchByIsbn, searchByTitle } from '../../lib/booksApi';
+import { cloudinaryReady, uploadImage } from '../../lib/cloudinary';
+
+export default function BookShelf() {
+  const { books, memos, addBook } = useData();
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const [status, setStatus] = useState('all');
+  const [tag, setTag] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const alive = books.filter((b) => !b.deletedAt);
+  const tags = uniqueTags(alive);
+
+  const list = useMemo(() => {
+    const kw = q.trim().toLowerCase();
+    return alive
+      .filter((b) => (status === 'all' ? true : b.status === status))
+      .filter((b) => (tag ? (b.tags || []).includes(tag) : true))
+      .filter((b) => (kw ? (b.title + b.author).toLowerCase().includes(kw) : true))
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+  }, [alive, q, status, tag]);
+
+  const countOf = (id: string) => memos.filter((m) => m.bookId === id && !m.deletedAt).length;
+  const due = dueCount(memos);
+
+  return (
+    <Screen>
+      <FlatList
+        data={list}
+        keyExtractor={(b) => b.id}
+        numColumns={2}
+        columnWrapperStyle={{ paddingHorizontal: 14, gap: 12 }}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        ListHeaderComponent={
+          <View>
+            <Title sub={`${alive.length}冊 / メモ${memos.filter((m) => !m.deletedAt).length}件`}
+              right={
+                <Pressable onPress={() => router.push('/settings')} hitSlop={10}>
+                  <Ionicons name="settings-outline" size={22} color={C.sub} />
+                </Pressable>
+              }>
+              My Library
+            </Title>
+
+            {due > 0 && (
+              <Press onPress={() => router.push('/review')} style={{ marginHorizontal: 20, marginBottom: 14 }}>
+                <LinearGradient colors={GRAD_MAIN} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={{ borderRadius: R.lg, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <Text style={{ fontSize: 24 }}>⚡</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 15 }}>今日の復習が {due} 件</Text>
+                    <Text style={{ color: '#0B0A1499', fontSize: 11.5, fontWeight: '700' }}>忘れかけの今がいちばん効く</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#0B0A14" />
+                </LinearGradient>
+              </Press>
+            )}
+
+            <SearchBar value={q} onChangeText={setQ} placeholder="タイトル・著者で検索" />
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 }}>
+              {['all', 'unread', 'reading', 'done'].map((s) => (
+                <Chip key={s} label={s === 'all' ? 'すべて' : STATUS_LABEL[s]} active={status === s}
+                  color={s === 'all' ? C.primary : STATUS_COLOR[s]} onPress={() => setStatus(s)} />
+              ))}
+            </View>
+
+            {!!tags.length && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, marginTop: 2 }}>
+                {tags.map((t) => (
+                  <Chip key={t} label={'#' + t} active={tag === t} color={C.cyan}
+                    onPress={() => setTag(tag === t ? '' : t)} />
+                ))}
+              </View>
+            )}
+          </View>
+        }
+        ListEmptyComponent={<Empty emoji="📖" title="まだ1冊もありません" sub="右下の＋から本を追加。ISBNか書名を入れれば表紙は自動で取ってきます。" />}
+        renderItem={({ item }) => (
+          <Press onPress={() => router.push(`/book/${item.id}`)} style={{ flex: 1, marginBottom: 12 }}>
+            <View style={{ borderRadius: R.lg, overflow: 'hidden', backgroundColor: C.card, borderWidth: 1, borderColor: C.line }}>
+              {item.coverUrl ? (
+                <Image source={{ uri: item.coverUrl }} style={{ width: '100%', height: 190 }} resizeMode="cover" />
+              ) : (
+                <LinearGradient colors={['#3A2E7A', '#16143A']} style={{ height: 190, alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+                  <Text style={{ fontSize: 30 }}>📗</Text>
+                  <Text numberOfLines={3} style={{ color: C.text, fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 8 }}>{item.title}</Text>
+                </LinearGradient>
+              )}
+              <View style={{ padding: 12 }}>
+                <Text numberOfLines={2} style={{ color: C.text, fontWeight: '800', fontSize: 13.5, lineHeight: 19 }}>{item.title}</Text>
+                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 11, marginTop: 3 }}>{item.author || '著者未設定'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 9 }}>
+                  <Text style={{ color: STATUS_COLOR[item.status], fontSize: 10.5, fontWeight: '900' }}>{STATUS_LABEL[item.status]}</Text>
+                  <Text style={{ color: C.sub, fontSize: 10.5, fontWeight: '700' }}>📝 {countOf(item.id)}</Text>
+                </View>
+              </View>
+            </View>
+          </Press>
+        )}
+      />
+
+      <Press onPress={() => setOpen(true)} style={{ position: 'absolute', right: 20, bottom: 20 }}>
+        <LinearGradient colors={GRAD_MAIN} style={{ width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="add" size={30} color="#0B0A14" />
+        </LinearGradient>
+      </Press>
+
+      <AddBookSheet visible={open} onClose={() => setOpen(false)} onDone={(msg: string) => toast.show(msg)} addBook={addBook} />
+      {toast.node}
+    </Screen>
+  );
+}
+
+function AddBookSheet({ visible, onClose, onDone, addBook }: any) {
+  const [title, setTitle] = useState('');
+  const [author, setAuthor] = useState('');
+  const [isbn, setIsbn] = useState('');
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [tags, setTags] = useState('');
+  const [status, setStatus] = useState('reading');
+  const [cands, setCands] = useState<any[]>([]);
+  const [busy, setBusy] = useState('');
+
+  const reset = () => { setTitle(''); setAuthor(''); setIsbn(''); setCoverUrl(null); setTags(''); setStatus('reading'); setCands([]); };
+
+  const auto = async () => {
+    setBusy('検索中…');
+    if (isbn.trim()) {
+      const r = await fetchByIsbn(isbn);
+      if (r) { setTitle(r.title); setAuthor(r.author); setCoverUrl(r.coverUrl); setBusy(''); return; }
+    }
+    const list = await searchByTitle(title || isbn);
+    setCands(list);
+    setBusy(list.length ? '' : '見つかりませんでした（手入力してください）');
+  };
+
+  const pick = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (res.canceled) return;
+    setBusy('アップロード中…');
+    try { setCoverUrl(await uploadImage(res.assets[0].uri)); setBusy(''); }
+    catch (e: any) { setBusy('失敗：' + e.message); }
+  };
+
+  return (
+    <Sheet visible={visible} onClose={onClose} title="本を追加">
+      <Field label="ISBN（13桁・任意）" value={isbn} onChangeText={setIsbn} placeholder="9784…" />
+      <Field label="タイトル" value={title} onChangeText={setTitle} placeholder="サピエンス全史" />
+      <Field label="著者" value={author} onChangeText={setAuthor} placeholder="ユヴァル・ノア・ハラリ" />
+      <Btn label="ISBN/書名から自動取得" kind="ghost" icon="cloud-download-outline" onPress={auto} />
+      {!!busy && <Text style={{ color: C.sub, fontSize: 12, marginTop: 8 }}>{busy}</Text>}
+
+      {!!cands.length && (
+        <View style={{ marginTop: 12 }}>
+          <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>候補をタップして反映</Text>
+          {cands.map((c, i) => (
+            <Pressable key={i} onPress={() => { setTitle(c.title); setAuthor(c.author); setCoverUrl(c.coverUrl); setCands([]); }}
+              style={{ flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 8 }}>
+              {c.coverUrl ? <Image source={{ uri: c.coverUrl }} style={{ width: 34, height: 48, borderRadius: 4 }} /> : <Text>📕</Text>}
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={1} style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>{c.title}</Text>
+                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 11 }}>{c.author}</Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
+      {!!coverUrl && (
+        <View style={{ alignItems: 'center', marginVertical: 12 }}>
+          <Image source={{ uri: coverUrl }} style={{ width: 88, height: 124, borderRadius: 8 }} />
+        </View>
+      )}
+
+      {cloudinaryReady && (
+        <Btn label="端末から表紙をアップロード" kind="ghost" icon="image-outline" style={{ marginTop: 10 }} onPress={pick} />
+      )}
+
+      <View style={{ height: 14 }} />
+      <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>ステータス</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {['unread', 'reading', 'done'].map((s) => (
+          <Chip key={s} label={STATUS_LABEL[s]} active={status === s} color={STATUS_COLOR[s]} onPress={() => setStatus(s)} />
+        ))}
+      </View>
+      <Field label="タグ（スペース区切り）" value={tags} onChangeText={setTags} placeholder="投資 心理学" />
+      <Btn
+        label="本棚に追加"
+        icon="add"
+        onPress={async () => {
+          if (!title.trim()) return;
+          await addBook({ title: title.trim(), author: author.trim(), coverUrl, status, tags: parseTags(tags) });
+          reset(); onClose(); onDone('本棚に追加しました');
+        }}
+      />
+    </Sheet>
+  );
+}
+</file>
+
+<file path="src/app/(tabs)/memos.tsx">
+// File: src/app/(tabs)/memos.tsx
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Btn, Card, Chip, Empty, Field, Press, Screen, SearchBar, Sheet, Stars, Title, useToast } from '../../components/ui';
+import MemoCard from '../../components/MemoCard';
+import { C, R } from '../../lib/theme';
+import { useData } from '../../lib/store';
+import { detectDuplicateTags, DuplicateTagGroup } from '../../lib/aiTagging';
+
+export default function CrossMemos() {
+  const { memos, updateMemo, genres } = useData();
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const [tag, setTag] = useState('');
+  const [selectedGenreId, setSelectedGenreId] = useState<string | null>(null);
+  const [star, setStar] = useState(0);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [genreManageOpen, setGenreManageOpen] = useState(false);
+
+  const alive = memos.filter((m) => !m.deletedAt);
+
+  const tagsWithCount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    alive.forEach((m) => {
+      (m.tags || []).forEach((t) => {
+        counts[t] = (counts[t] || 0) + 1;
+      });
+    });
+    return Object.keys(counts)
+      .sort((a, b) => counts[b] - counts[a])
+      .map((t) => ({ name: t, count: counts[t] }));
+  }, [alive]);
+
+  const currentGenre = genres.find((g) => g.id === selectedGenreId);
+  const genreTagNames = currentGenre?.tagNames || [];
+
+  const list = useMemo(() => {
+    const kw = q.trim().toLowerCase();
+    return alive
+      .filter((m) => (kw ? (m.content + ' ' + m.bookTitle).toLowerCase().includes(kw) : true))
+      .filter((m) => (tag ? (m.tags || []).includes(tag) : true))
+      .filter((m) => {
+        if (!selectedGenreId || !currentGenre) return true;
+        return (m.tags || []).some((t) => genreTagNames.includes(t));
+      })
+      .filter((m) => (star ? m.rating === star : true))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
+
+  return (
+    <Screen>
+      <FlatList
+        data={list}
+        keyExtractor={(m) => m.id}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+        ListHeaderComponent={
+          <View style={{ marginHorizontal: -20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 20 }}>
+              <Title sub={`${list.length}件 / 全${alive.length}件`}>横断メモ</Title>
+              <Press onPress={() => setGenreManageOpen(true)}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.card, borderColor: C.line, borderWidth: 1, paddingHorizontal: 12, height: 36, borderRadius: R.pill }}>
+                  <Text style={{ fontSize: 13 }}>🏷️</Text>
+                  <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>ジャンル管理</Text>
+                </View>
+              </Press>
+            </View>
+
+            <SearchBar value={q} onChangeText={setQ} placeholder="全部の本のメモを全文検索" />
+
+            {genres.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 8, marginBottom: 10 }}>
+                <Chip label="全ジャンル" active={!selectedGenreId} onPress={() => setSelectedGenreId(null)} />
+                {genres.map((g) => (
+                  <Chip
+                    key={g.id}
+                    label={`📁 ${g.name}`}
+                    active={selectedGenreId === g.id}
+                    color={C.primary}
+                    onPress={() => setSelectedGenreId(selectedGenreId === g.id ? null : g.id)}
+                  />
+                ))}
+              </ScrollView>
+            )}
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 }}>
+              {[1, 2, 3].map((n) => (
+                <Chip key={n} label={'★' + n} active={star === n} color={C.gold} onPress={() => setStar(star === n ? 0 : n)} />
+              ))}
+              {tagsWithCount.map((t) => {
+                if (selectedGenreId && !genreTagNames.includes(t.name)) return null;
+                return (
+                  <Chip
+                    key={t.name}
+                    label={`#${t.name} (${t.count})`}
+                    active={tag === t.name}
+                    color={C.cyan}
+                    onPress={() => setTag(tag === t.name ? '' : t.name)}
+                  />
+                );
+              })}
+            </View>
+          </View>
+        }
+        ListEmptyComponent={<Empty emoji="🔎" title="該当するメモがありません" sub="条件を外すか、本棚からメモを追加してください。" />}
+        renderItem={({ item }) =>
+          openId === item.id ? (
+            <Card style={{ marginBottom: 10 }}>
+              <Text style={{ color: C.cyan, fontSize: 11, fontWeight: '800', marginBottom: 8 }}>{item.bookTitle}</Text>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                multiline
+                style={{ color: C.text, fontSize: 14.5, lineHeight: 21, minHeight: 110, textAlignVertical: 'top' }}
+              />
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+                <Stars value={item.rating} onChange={(n: number) => updateMemo(item.id, { rating: n as any })} size={20} />
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable onPress={() => setOpenId(null)}>
+                    <Text style={{ color: C.sub, fontWeight: '800', padding: 8 }}>閉じる</Text>
+                  </Pressable>
+                  <Btn label="保存" onPress={async () => {
+                    await updateMemo(item.id, { content: draft });
+                    setOpenId(null); toast.show('保存しました');
+                  }} />
+                </View>
+              </View>
+            </Card>
+          ) : (
+            <MemoCard memo={item} showBook onPress={() => { setOpenId(item.id); setDraft(item.content); }} />
+          )
+        }
+      />
+
+      <GenreManageSheet visible={genreManageOpen} onClose={() => setGenreManageOpen(false)} tagsWithCount={tagsWithCount} />
+      {toast.node}
+    </Screen>
+  );
+}
+
+function GenreManageSheet({ visible, onClose, tagsWithCount }: any) {
+  const { genres, addGenre, updateGenre, deleteGenre, addTagsToGenre, mergeTags } = useData();
+  const toast = useToast();
+  const [newGenreName, setNewGenreName] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [tagSearch, setTagSearch] = useState('');
+
+  const [editingGenreId, setEditingGenreId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editTags, setEditTags] = useState<string[]>([]);
+
+  const [detecting, setDetecting] = useState(false);
+  const [duplicateCandidates, setDuplicateCandidates] = useState<DuplicateTagGroup[]>([]);
+  const [approvedGroups, setApprovedGroups] = useState<Record<number, boolean>>({});
+
+  const filteredTags = useMemo(() => {
+    const kw = tagSearch.trim().toLowerCase();
+    if (!kw) return tagsWithCount;
+    return tagsWithCount.filter((t: any) => t.name.toLowerCase().includes(kw));
+  }, [tagsWithCount, tagSearch]);
+
+  const handleDetectDuplicates = async () => {
+    const allTagNames = tagsWithCount.map((t: any) => t.name);
+    if (allTagNames.length < 2) {
+      toast.show('分析に必要なタグが2つ以上ありません');
+      return;
+    }
+    setDetecting(true);
+    try {
+      const results = await detectDuplicateTags(allTagNames);
+      if (results.length === 0) {
+        toast.show('整理が必要な重複タグは見つかりませんでした');
+      } else {
+        setDuplicateCandidates(results);
+        const initialApproved: Record<number, boolean> = {};
+        results.forEach((_, idx) => { initialApproved[idx] = true; });
+        setApprovedGroups(initialApproved);
+        toast.show(`${results.length}件の整理候補を検出しました`);
+      }
+    } catch (e) {
+      toast.show('AI通信で一時的なエラーが発生しました。時間を置いて再試行してください');
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const handleExecuteMerge = async () => {
+    for (let idx = 0; idx < duplicateCandidates.length; idx++) {
+      if (approvedGroups[idx]) {
+        const group = duplicateCandidates[idx];
+        await mergeTags(group.target, group.duplicates);
+      }
+    }
+    setDuplicateCandidates([]);
+    setApprovedGroups({});
+    toast.show('タグを統合しました');
+  };
+
+  const startEdit = (g: any) => {
+    setEditingGenreId(g.id);
+    setEditName(g.name);
+    setEditTags(g.tagNames || []);
+  };
+
+  const saveEdit = async () => {
+    if (!editingGenreId || !editName.trim()) return;
+    await updateGenre(editingGenreId, { name: editName.trim(), tagNames: editTags });
+    setEditingGenreId(null);
+  };
+
+  const toggleEditTag = (tagName: string) => {
+    setEditTags((prev) =>
+      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
+    );
+  };
+
+  const toggleTagSelect = (tagName: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
+    );
+  };
+
+  const handleCreateGenre = async () => {
+    if (!newGenreName.trim()) return;
+    await addGenre(newGenreName.trim(), selectedTags);
+    setNewGenreName('');
+    setSelectedTags([]);
+  };
+
+  const handleAssignToGenre = async (genreId: string) => {
+    if (selectedTags.length === 0) return;
+    await addTagsToGenre(genreId, selectedTags);
+    setSelectedTags([]);
+  };
+
+  return (
+    <Sheet visible={visible} onClose={() => { setEditingGenreId(null); setDuplicateCandidates([]); onClose(); }} title="🏷️ タグ・ジャンル管理">
+      <ScrollView style={{ maxHeight: 500 }}>
+        <View style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 16, borderWidth: 1, borderColor: C.primary }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View>
+              <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>✨ AIタグ自動整理・クレンジング</Text>
+              <Text style={{ color: C.sub, fontSize: 10.5, marginTop: 2 }}>「オレンジ/みかん」など同義タグを検出してまとめます</Text>
+            </View>
+            <Pressable
+              onPress={handleDetectDuplicates}
+              disabled={detecting}
+              style={{ backgroundColor: C.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: R.pill }}
+            >
+              {detecting ? (
+                <ActivityIndicator size="small" color="#0B0A14" />
+              ) : (
+                <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 11.5 }}>検出実行</Text>
+              )}
+            </Pressable>
+          </View>
+
+          {duplicateCandidates.length > 0 && (
+            <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}>
+              <Text style={{ color: C.gold, fontSize: 12, fontWeight: '800', marginBottom: 8 }}>
+                以下のタググループを統合しますか？（チェックで許可）
+              </Text>
+
+              {duplicateCandidates.map((group, idx) => (
+                <Pressable
+                  key={idx}
+                  onPress={() => setApprovedGroups((prev) => ({ ...prev, [idx]: !prev[idx] }))}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: approvedGroups[idx] ? C.primary + '22' : C.line + '44',
+                    padding: 8,
+                    borderRadius: R.sm,
+                    marginBottom: 6,
+                    borderWidth: 1,
+                    borderColor: approvedGroups[idx] ? C.primary : C.line,
+                  }}
+                >
+                  <Ionicons name={approvedGroups[idx] ? 'checkbox' : 'square-outline'} size={18} color={approvedGroups[idx] ? C.cyan : C.sub} />
+                  <View style={{ marginLeft: 8, flex: 1 }}>
+                    <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
+                      代表: <Text style={{ color: C.cyan }}>#{group.target}</Text>
+                    </Text>
+                    <Text style={{ color: C.sub, fontSize: 11 }}>
+                      統合対象: {group.duplicates.map((d) => `#${d}`).join(', ')}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+
+              <Btn label="選択したタグを統合実行" icon="checkmark" onPress={handleExecuteMerge} style={{ marginTop: 8 }} />
+            </View>
+          )}
+        </View>
+
+        {editingGenreId ? (
+          <View style={{ backgroundColor: C.card, padding: 14, borderRadius: R.md, marginBottom: 16, borderWidth: 1, borderColor: C.primary }}>
+            <Text style={{ color: C.primary, fontWeight: '900', fontSize: 14, marginBottom: 8 }}>✏️ ジャンルを編集</Text>
+            <Field label="ジャンル名" value={editName} onChangeText={setEditName} />
+
+            <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginTop: 10, marginBottom: 6 }}>
+              このジャンルのタグ（タップして除外）:
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              {editTags.map((t) => (
+                <Pressable key={t} onPress={() => toggleEditTag(t)} style={{ backgroundColor: C.line, paddingHorizontal: 10, paddingVertical: 5, borderRadius: R.sm, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={{ color: C.cyan, fontSize: 12, fontWeight: '700' }}>#{t}</Text>
+                  <Ionicons name="close-circle" size={14} color={C.danger} />
+                </Pressable>
+              ))}
+              {editTags.length === 0 && <Text style={{ color: C.sub, fontSize: 12 }}>タグがありません</Text>}
+            </View>
+
+            <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 6 }}>タグの追加・削除（タップで切り替え）:</Text>
+            <SearchBar value={tagSearch} onChangeText={setTagSearch} placeholder="タグを絞り込み" />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8, marginBottom: 16 }}>
+              {filteredTags.map((t: any) => {
+                const isIncluded = editTags.includes(t.name);
+                return (
+                  <Pressable
+                    key={t.name}
+                    onPress={() => toggleEditTag(t.name)}
+                    style={{
+                      backgroundColor: isIncluded ? C.primary : C.card,
+                      borderColor: isIncluded ? C.primary : C.line,
+                      borderWidth: 1,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: R.pill,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <Ionicons name={isIncluded ? 'checkbox' : 'square-outline'} size={14} color={isIncluded ? '#0B0A14' : C.sub} />
+                    <Text style={{ color: isIncluded ? '#0B0A14' : C.text, fontSize: 12, fontWeight: isIncluded ? '900' : '600' }}>#{t.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Btn label="保存" icon="checkmark" onPress={saveEdit} style={{ flex: 1 }} />
+              <Btn label="キャンセル" kind="danger" onPress={() => setEditingGenreId(null)} style={{ flex: 1 }} />
+            </View>
+          </View>
+        ) : (
+          <>
+            <View style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 16, borderWidth: 1, borderColor: C.line }}>
+              <Text style={{ color: C.text, fontWeight: '700', fontSize: 13, marginBottom: 8 }}>新ジャンルを作成</Text>
+              <Field label="" value={newGenreName} onChangeText={setNewGenreName} placeholder="ジャンル名（例: 経済学, 自己啓発）" />
+              <Btn label="作成（選択中のタグを含める）" icon="add" onPress={handleCreateGenre} style={{ marginTop: 8 }} />
+            </View>
+
+            {genres.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>登録済みジャンル（タップして編集）</Text>
+                {genres.map((g) => (
+                  <View key={g.id} style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 8, borderWidth: 1, borderColor: C.line }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Pressable onPress={() => startEdit(g)} style={{ flex: 1 }}>
+                        <Text style={{ color: C.text, fontWeight: '900', fontSize: 14 }}>📁 {g.name}</Text>
+                      </Pressable>
+                      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                        {selectedTags.length > 0 && (
+                          <Pressable onPress={() => handleAssignToGenre(g.id)} style={{ backgroundColor: C.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: R.sm }}>
+                            <Text style={{ color: '#0B0A14', fontSize: 11, fontWeight: '900' }}>+選択中の{selectedTags.length}件を追加</Text>
+                          </Pressable>
+                        )}
+                        <Pressable onPress={() => startEdit(g)} style={{ padding: 6, backgroundColor: C.line, borderRadius: R.sm }}>
+                          <Ionicons name="create-outline" size={16} color={C.text} />
+                        </Pressable>
+                        <Pressable onPress={() => deleteGenre(g.id)} style={{ padding: 6 }}>
+                          <Ionicons name="trash-outline" size={16} color={C.danger} />
+                        </Pressable>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                      {(g.tagNames || []).map((t) => (
+                        <Pressable key={t} onPress={() => startEdit(g)} style={{ backgroundColor: C.line, paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.sm }}>
+                          <Text style={{ color: C.cyan, fontSize: 11 }}>#{t}</Text>
+                        </Pressable>
+                      ))}
+                      {(g.tagNames || []).length === 0 && (
+                        <Pressable onPress={() => startEdit(g)}>
+                          <Text style={{ color: C.sub, fontSize: 11, fontStyle: 'italic' }}>タグ未登録（タップして追加）</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 6 }}>全タグ一覧（タップで一括追加の対象を選択）</Text>
+            <SearchBar value={tagSearch} onChangeText={setTagSearch} placeholder="タグを絞り込み検索" />
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 20 }}>
+              {filteredTags.map((t: any) => {
+                const isSelected = selectedTags.includes(t.name);
+                return (
+                  <Pressable
+                    key={t.name}
+                    onPress={() => toggleTagSelect(t.name)}
+                    style={{
+                      backgroundColor: isSelected ? C.primary : C.card,
+                      borderColor: isSelected ? C.primary : C.line,
+                      borderWidth: 1,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: R.pill,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <Ionicons name={isSelected ? 'checkbox' : 'square-outline'} size={14} color={isSelected ? '#0B0A14' : C.sub} />
+                    <Text style={{ color: isSelected ? '#0B0A14' : C.text, fontSize: 12, fontWeight: isSelected ? '900' : '600' }}>
+                      #{t.name} ({t.count})
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        )}
+      </ScrollView>
+    </Sheet>
+  );
+}
+</file>
+
+<file path="src/app/(tabs)/prompt.tsx">
+// File: src/app/(tabs)/prompt.tsx
+import React, { useMemo, useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import { Ionicons } from '@expo/vector-icons';
+import { Btn, Card, Chip, Empty, Field, Screen, Sheet, Title, useToast } from '../../components/ui';
+import { C, R } from '../../lib/theme';
+import { useData } from '../../lib/store';
+import { countToday } from '../../lib/srs';
+
+const sectionStyle = {
+  color: C.text,
+  fontSize: 14,
+  fontWeight: '800' as const,
+  marginHorizontal: 20,
+  marginTop: 18,
+  marginBottom: 10,
+};
+
+export default function PromptStudio() {
+  const { memos, books, templates, reviews, addTemplate, updateTemplate, deleteTemplate } = useData();
+  const toast = useToast();
+  const [tplId, setTplId] = useState<string | null>(null);
+  const [sel, setSel] = useState<Record<string, boolean>>({});
+  const [openTpl, setOpenTpl] = useState(false);
+  const [editTpl, setEditTpl] = useState<any>(null);
+  const [openBook, setOpenBook] = useState<Record<string, boolean>>({});
+
+  const alive = memos.filter((m) => !m.deletedAt);
+  const tpl = templates.find((t) => t.id === tplId) || templates[0];
+  const chosen = alive.filter((m) => sel[m.id]);
+
+  const todayIds = useMemo(() => {
+    const t = countToday(reviews) > 0 ? reviews.filter((r) => new Date(r.reviewedAt).toDateString() === new Date().toDateString()) : [];
+    return new Set(t.map((r) => r.memoId));
+  }, [reviews]);
+
+  const output = useMemo(() => {
+    if (!tpl) return '';
+    const bullets = chosen.map((m) => `・${m.content.replace(/\n/g, ' ')}（${m.bookTitle}${m.page ? ` p.${m.page}` : ''}）`).join('\n');
+    const titles = Array.from(new Set(chosen.map((m) => m.bookTitle))).join(' / ');
+    const authors = Array.from(new Set(chosen.map((m) => books.find((b) => b.id === m.bookId)?.author).filter(Boolean))).join(' / ');
+    const tags = Array.from(new Set(chosen.flatMap((m) => m.tags || []))).map((t) => '#' + t).join(' ');
+    const d = new Date();
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return tpl.body
+      .replace(/\{選択したメモ\}/g, bullets || '（メモ未選択）')
+      .replace(/\{タイトル\}/g, titles || '（未選択）')
+      .replace(/\{著者\}/g, authors || '不明')
+      .replace(/\{タグ\}/g, tags || 'なし')
+      .replace(/\{日付\}/g, date);
+  }, [tpl, chosen, books]);
+
+  const quick = (kind: string) => {
+    const next: Record<string, boolean> = {};
+    alive.forEach((m) => {
+      if (kind === 'star3' && m.rating === 3) next[m.id] = true;
+      if (kind === 'unrated' && m.rating === 0) next[m.id] = true;
+      if (kind === 'today' && todayIds.has(m.id)) next[m.id] = true;
+    });
+    setSel(next);
+  };
+
+  return (
+    <Screen>
+      <ScrollView contentContainerStyle={{ paddingBottom: 50 }}>
+        <Title sub={`${chosen.length}件のメモを選択中`}>AI活用スタジオ</Title>
+
+        <Text style={sectionStyle}>1. テンプレートを選ぶ</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
+          {templates.map((t) => (
+            <Pressable
+              key={t.id}
+              onPress={() => setTplId(t.id)}
+              onLongPress={() => { setEditTpl(t); setOpenTpl(true); }}
+              style={{
+                marginRight: 10,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                borderRadius: R.md,
+                borderWidth: 1,
+                maxWidth: 200,
+                borderColor: tpl?.id === t.id ? C.cyan : C.line,
+                backgroundColor: tpl?.id === t.id ? C.cyan + '22' : C.card,
+              }}
+            >
+              <Text numberOfLines={1} style={{ color: C.text, fontWeight: '800', fontSize: 13 }}>{t.name}</Text>
+              <Text style={{ color: C.sub, fontSize: 10.5, marginTop: 3 }}>使用 {t.usageCount || 0} 回・長押しで編集</Text>
+            </Pressable>
+          ))}
+          <Pressable
+            onPress={() => { setEditTpl(null); setOpenTpl(true); }}
+            style={{ paddingHorizontal: 16, paddingVertical: 12, borderRadius: R.md, borderWidth: 1, borderColor: C.primary, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ color: C.primary, fontWeight: '900' }}>＋ 新規</Text>
+          </Pressable>
+        </ScrollView>
+
+        <Text style={sectionStyle}>2. メモを選ぶ（本を跨いでOK）</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 }}>
+          <Chip label="★3だけ" onPress={() => quick('star3')} />
+          <Chip label="未評価だけ" onPress={() => quick('unrated')} />
+          <Chip label="今日復習した分" onPress={() => quick('today')} />
+          <Chip label="選択解除" color={C.danger} onPress={() => setSel({})} />
+        </View>
+
+        <View style={{ paddingHorizontal: 20 }}>
+          {books.filter((b) => !b.deletedAt).map((b) => {
+            const list = alive.filter((m) => m.bookId === b.id);
+            if (!list.length) return null;
+            const open = openBook[b.id];
+            return (
+              <View key={b.id} style={{ marginBottom: 10 }}>
+                <Pressable
+                  onPress={() => setOpenBook({ ...openBook, [b.id]: !open })}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}
+                >
+                  <Ionicons name={open ? 'chevron-down' : 'chevron-forward'} size={16} color={C.sub} />
+                  <Text numberOfLines={1} style={{ color: C.text, fontWeight: '800', flex: 1, marginLeft: 6 }}>{b.title}</Text>
+                  <Text style={{ color: C.sub, fontSize: 11 }}>{list.filter((m) => sel[m.id]).length}/{list.length}</Text>
+                </Pressable>
+                {open && list.map((m) => (
+                  <Pressable
+                    key={m.id}
+                    onPress={() => setSel({ ...sel, [m.id]: !sel[m.id] })}
+                    style={{ flexDirection: 'row', gap: 10, paddingVertical: 8, paddingLeft: 22 }}
+                  >
+                    <Ionicons name={sel[m.id] ? 'checkbox' : 'square-outline'} size={18} color={sel[m.id] ? C.cyan : C.sub} />
+                    <Text numberOfLines={2} style={{ flex: 1, color: sel[m.id] ? C.text : C.sub, fontSize: 13, lineHeight: 19 }}>{m.content}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            );
+          })}
+        </View>
+
+        <Text style={sectionStyle}>3. プレビューしてコピー</Text>
+        <View style={{ paddingHorizontal: 20 }}>
+          <Card>
+            <Text style={{ color: C.text, fontSize: 13, lineHeight: 20 }}>{output || '（テンプレートがありません）'}</Text>
+          </Card>
+          <Btn
+            label="クリップボードにコピー"
+            style={{ marginTop: 12 }}
+            onPress={async () => {
+              if (!output) return;
+              await Clipboard.setStringAsync(output);
+              if (tpl) {
+                await updateTemplate(tpl.id, { usageCount: (tpl.usageCount || 0) + 1 });
+              }
+              toast.show('コピーしました！AIに貼り付けてください');
+            }}
+          />
+        </View>
+
+        <TemplateSheet visible={openTpl} onClose={() => setOpenTpl(false)} tpl={editTpl} />
+        {toast.node}
+      </ScrollView>
+    </Screen>
+  );
+}
+
+function TemplateSheet({ visible, onClose, tpl }: any) {
+  const { addTemplate, updateTemplate, deleteTemplate } = useData();
+  const [name, setName] = useState('');
+  const [body, setBody] = useState('');
+
+  React.useEffect(() => {
+    if (!visible) return;
+    setName(tpl?.name || '');
+    setBody(tpl?.body || '');
+  }, [visible, tpl]);
+
+  return (
+    <Sheet visible={visible} onClose={onClose} title={tpl ? 'テンプレートを編集' : '新しいテンプレート'}>
+      <Field label="名前" value={name} onChangeText={setName} placeholder="例: 3行要約" />
+      <Field label="プロンプト本文" value={body} onChangeText={setBody} multiline minHeight={200} placeholder="変数として {選択したメモ} {タイトル} {著者} {タグ} {日付} が使えます。" />
+      <Btn
+        label="保存"
+        icon="checkmark"
+        onPress={async () => {
+          if (!name.trim() || !body.trim()) return;
+          if (tpl) await updateTemplate(tpl.id, { name: name.trim(), body: body.trim() });
+          else await addTemplate(name.trim(), body.trim());
+          onClose();
+        }}
+      />
+      {tpl && (
+        <Btn
+          label="削除"
+          kind="danger"
+          icon="trash-outline"
+          style={{ marginTop: 10 }}
+          onPress={async () => {
+            await deleteTemplate(tpl.id);
+            onClose();
+          }}
+        />
+      )}
+    </Sheet>
+  );
+}
+</file>
+
+<file path="src/app/(tabs)/review.tsx">
+// File: src/app/(tabs)/review.tsx
+import React, { useEffect, useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { Btn, Card, Empty, Press, Screen, Title } from '../../components/ui';
+import MemoSheet from '../../components/MemoSheet';
+import { C, GRAD_HOT, GRAD_MAIN, R } from '../../lib/theme';
+import { useData } from '../../lib/store';
+import { EXTRA_BATCH, buildQueue, computeStreak, countToday, dueCount, retention } from '../../lib/srs';
+import { saveSettings, useSettings } from '../../lib/settings';
+
+const LABEL: any = { 1: '微妙', 2: '普通', 3: '最高' };
+
+export default function Review() {
+  const { memos, reviews, reviewMemo, updateMemo, loaded } = useData();
+  const settings = useSettings();
+  const [queue, setQueue] = useState<any[]>([]);
+  const [i, setI] = useState(0);
+  const [built, setBuilt] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  const [session, setSession] = useState(0);
+  const [memoOpen, setMemoOpen] = useState(false);
+
+  const done = countToday(reviews);
+  const streak = computeStreak(reviews);
+  const due = dueCount(memos);
+
+  useEffect(() => {
+    if (!loaded || built) return;
+    const remain = Math.max(0, settings.dailyLimit - done);
+    setQueue(buildQueue(memos, Date.now(), remain));
+    setBuilt(true);
+  }, [loaded, built, memos, settings.dailyLimit, done]);
+
+  const current = queue[i];
+
+  const rate = async (r: 1 | 2 | 3) => {
+    if (!current) return;
+    await reviewMemo(current, r);
+    setSession((n) => n + 1);
+    setRevealed(false);
+    setI((n) => n + 1);
+  };
+
+  const more = () => {
+    setQueue(buildQueue(memos, Date.now(), EXTRA_BATCH));
+    setI(0); setRevealed(false);
+  };
+
+  const header = (
+    <View>
+      <Title sub={`今日 ${done} 件 / 上限 ${settings.dailyLimit} 件・未処理 ${due} 件`}>復習</Title>
+      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginBottom: 16 }}>
+        <LinearGradient colors={GRAD_HOT} style={{ flex: 1, borderRadius: R.lg, padding: 14 }}>
+          <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 22 }}>🔥 {streak}</Text>
+          <Text style={{ color: '#0B0A1499', fontWeight: '800', fontSize: 11 }}>連続日数</Text>
+        </LinearGradient>
+        <View style={{ flex: 1, borderRadius: R.lg, padding: 14, backgroundColor: C.card, borderWidth: 1, borderColor: C.line }}>
+          <Text style={{ color: C.cyan, fontWeight: '900', fontSize: 22 }}>{session}</Text>
+          <Text style={{ color: C.sub, fontWeight: '800', fontSize: 11 }}>このセッション</Text>
+        </View>
+        <Pressable onPress={() => saveSettings({ recallMode: !settings.recallMode })}
+          style={{ width: 54, borderRadius: R.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: C.card, borderWidth: 1, borderColor: C.line }}>
+          <Ionicons name={settings.recallMode ? 'eye-off' : 'eye'} size={20} color={settings.recallMode ? C.danger : C.sub} />
+          <Text style={{ color: C.sub, fontSize: 9, marginTop: 3, fontWeight: '800' }}>想起</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  if (!current) {
+    return (
+      <Screen>
+        <ScrollView>
+          {header}
+          <Empty
+            emoji={done > 0 ? '🎉' : '🌱'}
+            title={done > 0 ? `今日はここまで！ ${done}件クリア` : '今日の復習対象はありません'}
+            sub={due > 0 ? `未処理があと${due}件あります。無理に全部やらないのが継続のコツですが、いけるなら+${EXTRA_BATCH}枚。` : '新しいメモを追加すると、翌日から出題されます。'}
+          />
+          {due > 0 && <Btn label={`もう${EXTRA_BATCH}枚やる`} icon="flash" style={{ marginHorizontal: 40 }} onPress={more} />}
+        </ScrollView>
+      </Screen>
+    );
+  }
+
+  const r = Math.round(retention(current) * 100);
+  const show = revealed || !settings.recallMode;
+
+  const locationText = [
+    current.chapter ? `第${current.chapter}章` : null,
+    current.page ? `p.${current.page}` : null,
+  ].filter(Boolean).join(' ');
+
+  const progressPercent = Math.min(100, Math.max(0, Math.round((i / Math.max(1, queue.length)) * 100)));
+
+  return (
+    <Screen>
+      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+        {header}
+        <View style={{ paddingHorizontal: 20 }}>
+          <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3, marginBottom: 16 }}>
+            <View style={{ height: 6, width: `${progressPercent}%` as any, backgroundColor: C.cyan, borderRadius: 3 }} />
+          </View>
+
+          <Card style={{ padding: 20, minHeight: 260, position: 'relative' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={{ color: C.cyan, fontSize: 12, fontWeight: '900' }}>{current.bookTitle}</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 }}>
+                  {(current.tags || []).map((t: string) => (
+                    <Text key={t} style={{ color: C.sub, fontSize: 11.5, marginRight: 8 }}>#{t}</Text>
+                  ))}
+                </View>
+              </View>
+
+              <Pressable onPress={() => setMemoOpen(true)} hitSlop={10} style={{ padding: 6, backgroundColor: C.line, borderRadius: R.sm }}>
+                <Ionicons name="create-outline" size={18} color={C.text} />
+              </Pressable>
+            </View>
+
+            <View style={{ height: 14 }} />
+
+            {show ? (
+              <View>
+                <Text style={{ color: C.text, fontSize: 17, lineHeight: 27, fontWeight: '600' }}>{current.content}</Text>
+
+                {!!current.insight && (
+                  <View style={{ backgroundColor: C.primary + '22', padding: 10, borderRadius: R.sm, marginTop: 12 }}>
+                    <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>💡 {current.insight}</Text>
+                  </View>
+                )}
+
+                {!!current.actionPlan && (
+                  <View style={{ backgroundColor: C.gold + '22', padding: 10, borderRadius: R.sm, marginTop: 8 }}>
+                    <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>🎯 {current.actionPlan}</Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                <Text style={{ fontSize: 40 }}>🤔</Text>
+                <Text style={{ color: C.sub, marginTop: 12, textAlign: 'center', lineHeight: 20 }}>
+                  この本のこのタグで、{'\n'}何を書いたか思い出せますか？
+                </Text>
+              </View>
+            )}
+
+            <View style={{ flex: 1, minHeight: 20 }} />
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+              <Text style={{ color: r < 40 ? C.danger : C.sub, fontSize: 11, fontWeight: '800' }}>
+                推定記憶残存率 {r}%・{current.reps}回目
+              </Text>
+              {!!locationText && <Text style={{ color: C.sub, fontSize: 11 }}>{locationText}</Text>}
+            </View>
+          </Card>
+
+          {!show ? (
+            <Btn label="思い出した → 答えを見る" icon="eye" style={{ marginTop: 18 }} onPress={() => setRevealed(true)} />
+          ) : (
+            <View style={{ marginTop: 18 }}>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                {[1, 2, 3].map((n) => (
+                  <Press key={n} onPress={() => rate(n as 1 | 2 | 3)} style={{ flex: 1 }}>
+                    <LinearGradient
+                      colors={n === 3 ? GRAD_MAIN : n === 2 ? ['#4A4370', '#302B52'] : ['#5A2E48', '#3A1F33']}
+                      style={{ borderRadius: R.md, paddingVertical: 16, alignItems: 'center' }}
+                    >
+                      <Text style={{ fontSize: 18 }}>{'★'.repeat(n)}</Text>
+                      <Text style={{ color: n === 3 ? '#0B0A14' : C.text, fontWeight: '900', marginTop: 4, fontSize: 12.5 }}>{LABEL[n]}</Text>
+                    </LinearGradient>
+                  </Press>
+                ))}
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 }}>
+                <Pressable onPress={() => { setRevealed(false); setI(i + 1); }}>
+                  <Text style={{ color: C.sub, fontWeight: '800', padding: 6 }}>あとで（スキップ）</Text>
+                </Pressable>
+                <Pressable onPress={async () => { await updateMemo(current.id, { suspended: true }); setRevealed(false); setI(i + 1); }}>
+                  <Text style={{ color: C.sub, fontWeight: '800', padding: 6 }}>もう出さない</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      <MemoSheet visible={memoOpen} onClose={() => setMemoOpen(false)} memo={current} bookId={current?.bookId} />
+    </Screen>
+  );
+}
+</file>
+
+<file path="src/app/book/[id].tsx">
+// File: src/app/book/[id].tsx
+import React, { useMemo, useState } from 'react';
+import { FlatList, Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Btn, Card, Chip, Empty, Field, Press, Screen, SearchBar, Sheet, Stars, useToast } from '../../components/ui';
+import MemoCard from '../../components/MemoCard';
+import MemoSheet from '../../components/MemoSheet';
+import { C, R, STATUS_COLOR, STATUS_LABEL } from '../../lib/theme';
+import { parseTags, useData } from '../../lib/store';
+import { orderBetween } from '../../lib/order';
+
+const SORTS = [
+  { k: 'chapter', label: '章・ページ順' },
+  { k: 'created', label: '作成日' },
+  { k: 'updated', label: '更新日' },
+  { k: 'rating', label: '評価' },
+  { k: 'manual', label: '手動' },
+];
+
+const parseNum = (val: string | null | undefined) => {
+  if (!val) return 999999;
+  const n = parseInt(val.replace(/[^0-9]/g, ''), 10);
+  return isNaN(n) ? 999999 : n;
+};
+
+export default function BookDetail() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { books, memos, updateBook, trashBook, moveMemo } = useData();
+  const toast = useToast();
+  const book = books.find((b) => b.id === id);
+
+  const [q, setQ] = useState('');
+  const [tag, setTag] = useState('');
+  const [star, setStar] = useState(0);
+  const [sort, setSort] = useState('chapter');
+  const [arrange, setArrange] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [memoOpen, setMemoOpen] = useState(false);
+  const [bookEdit, setBookEdit] = useState(false);
+  
+  // 気付き一覧・アクションプラン一覧シートの表示管理
+  const [insightOpen, setInsightOpen] = useState(false);
+  const [actionOpen, setActionOpen] = useState(false);
+
+  const mine = memos.filter((m) => m.bookId === id && !m.deletedAt);
+
+  const insightMemos = useMemo(() => mine.filter((m) => !!m.insight), [mine]);
+  const actionMemos = useMemo(() => mine.filter((m) => !!m.actionPlan), [mine]);
+
+  const tagsWithCount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    mine.forEach((m) => {
+      (m.tags || []).forEach((t) => {
+        counts[t] = (counts[t] || 0) + 1;
+      });
+    });
+    return Object.keys(counts)
+      .sort((a, b) => counts[b] - counts[a])
+      .map((t) => ({ name: t, count: counts[t] }));
+  }, [mine]);
+
+  const list = useMemo(() => {
+    const kw = q.trim().toLowerCase();
+    const arr = mine
+      .filter((m) => (kw ? m.content.toLowerCase().includes(kw) : true))
+      .filter((m) => (tag ? (m.tags || []).includes(tag) : true))
+      .filter((m) => (star ? m.rating === star : true));
+
+    if (sort === 'chapter') {
+      return arr.sort((a, b) => {
+        const chapA = parseNum(a.chapter);
+        const chapB = parseNum(b.chapter);
+        if (chapA !== chapB) return chapA - chapB;
+        const pageA = parseNum(a.page);
+        const pageB = parseNum(b.page);
+        if (pageA !== pageB) return pageA - pageB;
+        return b.createdAt - a.createdAt;
+      });
+    }
+    if (sort === 'created') return arr.sort((a, b) => b.createdAt - a.createdAt);
+    if (sort === 'updated') return arr.sort((a, b) => b.updatedAt - a.updatedAt);
+    if (sort === 'rating') return arr.sort((a, b) => b.rating - a.rating || b.updatedAt - a.updatedAt);
+    return arr.sort((a, b) => (a.order || 0) - (b.order || 0));
+  }, [mine, q, tag, star, sort]);
+
+  const move = async (index: number, dir: -1 | 1) => {
+    const target = list[index];
+    const swapIdx = index + dir;
+    if (swapIdx < 0 || swapIdx >= list.length) return;
+    const a = list[swapIdx];
+    const b = list[swapIdx + dir];
+    await moveMemo(target.id, orderBetween(dir === -1 ? b?.order ?? null : a.order, dir === -1 ? a.order : b?.order ?? null));
+  };
+
+  if (!book) return <Screen><Empty emoji="🔍" title="本が見つかりません" /></Screen>;
+
+  return (
+    <Screen>
+      <FlatList
+        data={list}
+        keyExtractor={(m) => m.id}
+        numColumns={arrange ? 1 : 2}
+        key={arrange ? 'one' : 'two'}
+        columnWrapperStyle={arrange ? undefined : { paddingHorizontal: 14, gap: 10 }}
+        contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: arrange ? 14 : 0 }}
+        ListHeaderComponent={
+          <View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 }}>
+              <Pressable onPress={() => router.back()} hitSlop={10}>
+                <Ionicons name="chevron-back" size={26} color={C.text} />
+              </Pressable>
+              {book.coverUrl ? <Image source={{ uri: book.coverUrl }} style={{ width: 44, height: 62, borderRadius: 6 }} /> : <Text style={{ fontSize: 30 }}>📗</Text>}
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={2} style={{ color: C.text, fontSize: 17, fontWeight: '900', lineHeight: 23 }}>{book.title}</Text>
+                <Text style={{ color: C.sub, fontSize: 11.5 }}>{book.author || '著者未設定'}・メモ{mine.length}件</Text>
+              </View>
+              <Pressable onPress={() => setBookEdit(true)} hitSlop={10}>
+                <Ionicons name="ellipsis-horizontal" size={22} color={C.sub} />
+              </Pressable>
+            </View>
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 }}>
+              {['unread', 'reading', 'done'].map((s) => (
+                <Chip key={s} label={STATUS_LABEL[s]} active={book.status === s} color={STATUS_COLOR[s]}
+                  onPress={() => updateBook(book.id, { status: s as any })} />
+              ))}
+            </View>
+
+            {/* 新規メモ / 💡気付き / 🎯アクション ボタン群 */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+              <Press onPress={() => { setEditing(null); setMemoOpen(true); }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.primary, paddingHorizontal: 12, height: 36, borderRadius: R.pill }}>
+                  <Ionicons name="add" size={16} color="#0B0A14" />
+                  <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 12.5 }}>新規メモ</Text>
+                </View>
+              </Press>
+
+              <Press onPress={() => setInsightOpen(true)}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.card, borderColor: C.line, borderWidth: 1, paddingHorizontal: 12, height: 36, borderRadius: R.pill }}>
+                  <Text style={{ fontSize: 12 }}>💡</Text>
+                  <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>気付き({insightMemos.length})</Text>
+                </View>
+              </Press>
+
+              <Press onPress={() => setActionOpen(true)}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.card, borderColor: C.line, borderWidth: 1, paddingHorizontal: 12, height: 36, borderRadius: R.pill }}>
+                  <Text style={{ fontSize: 12 }}>🎯</Text>
+                  <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>アクション({actionMemos.length})</Text>
+                </View>
+              </Press>
+
+              <Pressable onPress={() => { setArrange(!arrange); if (!arrange) setSort('manual'); }} style={{ marginLeft: 'auto' }}>
+                <Text style={{ color: arrange ? C.cyan : C.sub, fontWeight: '800', fontSize: 12 }}>
+                  {arrange ? '並び替え終了' : '並び替え'}
+                </Text>
+              </Pressable>
+            </View>
+
+            <SearchBar value={q} onChangeText={setQ} placeholder="このメモ内をキーワード検索" />
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 }}>
+              {SORTS.map((s) => (
+                <Chip key={s.k} label={s.label} active={sort === s.k} onPress={() => setSort(s.k)} />
+              ))}
+              {[1, 2, 3].map((n) => (
+                <Chip key={n} label={'★' + n} active={star === n} color={C.gold} onPress={() => setStar(star === n ? 0 : n)} />
+              ))}
+            </View>
+
+            {!!tagsWithCount.length && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 }}>
+                {tagsWithCount.map((t) => (
+                  <Chip key={t.name} label={`#${t.name} (${t.count})`} active={tag === t.name} color={C.cyan} onPress={() => setTag(tag === t.name ? '' : t.name)} />
+                ))}
+              </View>
+            )}
+          </View>
+        }
+        ListEmptyComponent={<Empty emoji="✍️" title="メモがありません" sub="読みながら一言でもいいので残すと、あとでAIが勝手に価値に変えてくれます。" />}
+        renderItem={({ item, index }) =>
+          arrange ? (
+            <Card style={{ marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text numberOfLines={2} style={{ flex: 1, color: C.text, fontSize: 13.5 }}>{item.content}</Text>
+              <Pressable onPress={() => move(index, -1)} hitSlop={8}><Ionicons name="arrow-up" size={20} color={C.cyan} /></Pressable>
+              <Pressable onPress={() => move(index, 1)} hitSlop={8}><Ionicons name="arrow-down" size={20} color={C.cyan} /></Pressable>
+            </Card>
+          ) : (
+            <View style={{ flex: 1 }}>
+              <MemoCard memo={item} onPress={() => { setEditing(item); setMemoOpen(true); }} />
+            </View>
+          )
+        }
+      />
+
+      {/* 気付き一覧シート */}
+      <Sheet visible={insightOpen} onClose={() => setInsightOpen(false)} title="💡 この本の気付き・学び一覧">
+        <ScrollView style={{ maxHeight: 400 }}>
+          {insightMemos.length === 0 ? (
+            <Text style={{ color: C.sub, textAlign: 'center', marginVertical: 20 }}>気付きが登録されたメモはまだありません</Text>
+          ) : (
+            insightMemos.map((m) => (
+              <Pressable
+                key={m.id}
+                onPress={() => { setInsightOpen(false); setEditing(m); setMemoOpen(true); }}
+                style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 10, borderWidth: 1, borderColor: C.line }}
+              >
+                <Text style={{ color: C.cyan, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
+                  {m.chapter ? `第${m.chapter}章 ` : ''}{m.page ? `${m.page}P` : ''}
+                </Text>
+                <Text style={{ color: C.sub, fontSize: 12, marginBottom: 6 }} numberOfLines={2}>メモ: {m.content}</Text>
+                <View style={{ backgroundColor: C.primary + '22', padding: 8, borderRadius: R.sm }}>
+                  <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>💡 {m.insight}</Text>
+                </View>
+              </Pressable>
+            ))
+          )}
+        </ScrollView>
+      </Sheet>
+
+      {/* アクションプラン一覧シート */}
+      <Sheet visible={actionOpen} onClose={() => setActionOpen(false)} title="🎯 この本のアクションプラン一覧">
+        <ScrollView style={{ maxHeight: 400 }}>
+          {actionMemos.length === 0 ? (
+            <Text style={{ color: C.sub, textAlign: 'center', marginVertical: 20 }}>アクションプランが登録されたメモはまだありません</Text>
+          ) : (
+            actionMemos.map((m) => (
+              <Pressable
+                key={m.id}
+                onPress={() => { setActionOpen(false); setEditing(m); setMemoOpen(true); }}
+                style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 10, borderWidth: 1, borderColor: C.line }}
+              >
+                <Text style={{ color: C.cyan, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
+                  {m.chapter ? `第${m.chapter}章 ` : ''}{m.page ? `${m.page}P` : ''}
+                </Text>
+                <Text style={{ color: C.sub, fontSize: 12, marginBottom: 6 }} numberOfLines={2}>メモ: {m.content}</Text>
+                <View style={{ backgroundColor: C.gold + '22', padding: 8, borderRadius: R.sm }}>
+                  <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>🎯 {m.actionPlan}</Text>
+                </View>
+              </Pressable>
+            ))
+          )}
+        </ScrollView>
+      </Sheet>
+
+      <MemoSheet visible={memoOpen} onClose={() => setMemoOpen(false)} memo={editing} bookId={book.id} />
+      <BookEditSheet visible={bookEdit} onClose={() => setBookEdit(false)} book={book}
+        onSave={updateBook} onTrash={async () => { await trashBook(book.id); router.back(); }} />
+      {toast.node}
+    </Screen>
+  );
+}
+
+function BookEditSheet({ visible, onClose, book, onSave, onTrash }: any) {
+  const [title, setTitle] = useState(book.title);
+  const [author, setAuthor] = useState(book.author);
+  const [cover, setCover] = useState(book.coverUrl || '');
+  const [tags, setTags] = useState((book.tags || []).join(' '));
+  return (
+    <Sheet visible={visible} onClose={onClose} title="本の情報を編集">
+      <Field label="タイトル" value={title} onChangeText={setTitle} />
+      <Field label="著者" value={author} onChangeText={setAuthor} />
+      <Field label="表紙画像URL" value={cover} onChangeText={setCover} placeholder="https://..." />
+      <Field label="タグ" value={tags} onChangeText={setTags} />
+      <Btn label="保存" icon="checkmark" onPress={async () => {
+        await onSave(book.id, { title: title.trim(), author: author.trim(), coverUrl: cover.trim() || null, tags: parseTags(tags) });
+        onClose();
+      }} />
+      <Btn label="この本とメモをゴミ箱へ" kind="danger" icon="trash-outline" style={{ marginTop: 10 }} onPress={onTrash} />
+    </Sheet>
+  );
+}
+</file>
+
+<file path="src/app/_layout.tsx">
+// File: src/app/_layout.tsx
+import React from 'react';
+import { View, Text, Platform } from 'react-native';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { DataProvider, useData } from '../lib/store';
+import Login from '../components/Login';
+import { C } from '../lib/theme';
+
+// Web環境（Netlifyなど）でCDNからアイコンフォントを確実に直接読み込む
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const styleId = 'expo-ionicons-cdn';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.type = 'text/css';
+    style.appendChild(
+      document.createTextNode(`
+        @font-face {
+          font-family: 'Ionicons';
+          src: url('https://unpkg.com/@expo/vector-icons@latest/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf') format('truetype');
+        }
+      `)
+    );
+    document.head.appendChild(style);
+  }
+}
+
+function Gate() {
+  const { authReady, user } = useData();
+  if (!authReady) {
+    return (
+      <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 40 }}>📚</Text>
+      </View>
+    );
+  }
+  if (!user) return <Login />;
+  return (
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg } }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="book/[id]" />
+      <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <DataProvider>
+          <StatusBar style="light" />
+          <Gate />
+        </DataProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
+  );
+}
+</file>
+
+<file path="src/app/settings.tsx">
+// File: src/app/settings.tsx
+import React, { useState } from 'react';
+import { Text, View } from 'react-native';
+import { router } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
+import { Btn, Field, Screen, Title, useToast } from '../components/ui';
+import { C } from '../lib/theme';
+import { useData } from '../lib/store';
+import { saveSettings, useSettings } from '../lib/settings';
+
+export default function SettingsScreen() {
+  const { user, signOut, exportJson, importJson } = useData();
+  const settings = useSettings();
+  const toast = useToast();
+  const [limitStr, setLimitStr] = useState(String(settings.dailyLimit));
+  const [importText, setImportText] = useState('');
+
+  const handleSave = async () => {
+    const n = parseInt(limitStr, 10);
+    if (!isNaN(n) && n > 0) {
+      await saveSettings({ dailyLimit: n });
+      toast.show('保存しました');
+    }
+  };
+
+  const handleExport = async () => {
+    const json = exportJson();
+    await Clipboard.setStringAsync(json);
+    toast.show('クリップボードにコピーしました');
+  };
+
+  const handleImport = async () => {
+    if (!importText.trim()) return;
+    try {
+      const count = await importJson(importText);
+      setImportText('');
+      toast.show(`${count}件のデータを復元しました`);
+    } catch (e) {
+      toast.show('データの読み込みに失敗しました');
+    }
+  };
+
+  return (
+    <Screen>
+      <View style={{ flex: 1, padding: 20 }}>
+        <Title sub={user?.email || ''}>設定</Title>
+        <View style={{ height: 20 }} />
+
+        <Text style={{ color: C.text, fontWeight: '800', marginBottom: 8 }}>復習の設定</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10, marginBottom: 20 }}>
+          <View style={{ flex: 1 }}>
+            <Field label="1日の出題上限（枚）" value={limitStr} onChangeText={setLimitStr} />
+          </View>
+          <View style={{ width: 80, marginBottom: 12 }}>
+            <Btn label="変更" onPress={handleSave} />
+          </View>
+        </View>
+
+        <Text style={{ color: C.text, fontWeight: '800', marginBottom: 8 }}>データバックアップ</Text>
+        <Btn label="全データをJSONでエクスポート (コピー)" kind="ghost" icon="download-outline" onPress={handleExport} />
+        <View style={{ height: 16 }} />
+
+        <Field label="JSONからインポート (復元)" value={importText} onChangeText={setImportText} multiline minHeight={80} placeholder='{"version": 1, ...}' />
+        <Btn label="復元を実行" kind="danger" icon="push-outline" onPress={handleImport} />
+
+        <View style={{ flex: 1 }} />
+        <Btn
+          label="ログアウト"
+          kind="ghost"
+          icon="log-out-outline"
+          onPress={async () => {
+            await signOut();
+            router.replace('/');
+          }}
+        />
+      </View>
+      {toast.node}
+    </Screen>
+  );
+}
+</file>
+
+<file path="src/components/Login.tsx">
+// File: src/components/Login.tsx
+import React, { useState } from 'react';
+import { Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Btn, Field, Screen } from './ui';
+import { C, GRAD_MAIN } from '../lib/theme';
+import { useData } from '../lib/store';
+
+export default function Login() {
+  const { signIn } = useData();
+  const [email, setEmail] = useState('');
+  const [pass, setPass] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const go = async () => {
+    setBusy(true); setErr('');
+    try { await signIn(email, pass); }
+    catch (e: any) { setErr('ログインに失敗しました：' + (e?.code || e?.message || '')); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Screen>
+      <View style={{ flex: 1, justifyContent: 'center', padding: 28 }}>
+        <LinearGradient colors={GRAD_MAIN} style={{ width: 62, height: 62, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+          <Text style={{ fontSize: 30 }}>📚</Text>
+        </LinearGradient>
+        <Text style={{ color: C.text, fontSize: 32, fontWeight: '900', letterSpacing: -1 }}>Reading Brain</Text>
+        <Text style={{ color: C.sub, marginTop: 6, marginBottom: 26 }}>読む → 残す → 思い出す → 使う</Text>
+        <Field label="メールアドレス" value={email} onChangeText={setEmail} placeholder="you@example.com" />
+        <Field label="パスワード" value={pass} onChangeText={setPass} placeholder="********" />
+        {!!err && <Text style={{ color: C.danger, marginBottom: 12, fontSize: 12 }}>{err}</Text>}
+        <Btn label={busy ? '接続中…' : 'ログイン'} icon="log-in-outline" onPress={go} />
+      </View>
+    </Screen>
+  );
+}
+</file>
+
+<file path="src/components/MemoCard.tsx">
+// File: src/components/MemoCard.tsx
+import React from 'react';
+import { Text, View } from 'react-native';
+import { Card, Stars } from './ui';
+import { C, R } from '../lib/theme';
+import { retention } from '../lib/srs';
+import type { Memo } from '../lib/types';
+
+export default function MemoCard({ memo, onPress, showBook }: any) {
+  const r = Math.round(retention(memo as Memo) * 100);
+
+  // 章とページ表示の組み合わせ
+  const locationText = [
+    memo.chapter ? `第${memo.chapter}章` : null,
+    memo.page ? `p.${memo.page}` : null,
+  ].filter(Boolean).join(' ');
+
+  return (
+    <Card onPress={onPress} style={{ marginBottom: 10 }}>
+      {showBook ? (
+        <Text numberOfLines={1} style={{ color: C.cyan, fontSize: 11, fontWeight: '800', marginBottom: 6 }}>
+          {memo.bookTitle || '（書籍不明）'}
+        </Text>
+      ) : null}
+
+      {/* メモ本文 */}
+      <Text style={{ color: C.text, fontSize: 14.5, lineHeight: 21 }} numberOfLines={8}>
+        {memo.content}
+      </Text>
+
+      {/* 💡 気付き表示 */}
+      {!!memo.insight && (
+        <View style={{ backgroundColor: C.primary + '22', padding: 8, borderRadius: R.sm, marginTop: 8 }}>
+          <Text style={{ color: C.text, fontSize: 12.5 }} numberOfLines={3}>
+            💡 {memo.insight}
+          </Text>
+        </View>
+      )}
+
+      {/* 🎯 アクションプラン表示 */}
+      {!!memo.actionPlan && (
+        <View style={{ backgroundColor: C.gold + '22', padding: 8, borderRadius: R.sm, marginTop: 6 }}>
+          <Text style={{ color: C.text, fontSize: 12.5 }} numberOfLines={3}>
+            🎯 {memo.actionPlan}
+          </Text>
+        </View>
+      )}
+
+      {/* タグ表示 */}
+      {!!(memo.tags || []).length && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
+          {memo.tags.map((t: string) => (
+            <Text key={t} style={{ color: C.sub, fontSize: 11, marginRight: 8 }}>#{t}</Text>
+          ))}
+        </View>
+      )}
+
+      {/* フッター（評価・記憶率・章/ページ） */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+        <Stars value={memo.rating} size={14} />
+        <Text style={{ color: r < 40 ? C.danger : C.sub, fontSize: 10.5, fontWeight: '700' }}>
+          記憶 {r}%{locationText ? ` ・ ${locationText}` : ''}
+        </Text>
+      </View>
+    </Card>
+  );
+}
+</file>
+
+<file path="src/components/MemoSheet.tsx">
+// File: src/components/MemoSheet.tsx
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { View, Text, Pressable, ScrollView, Dimensions, ActivityIndicator } from 'react-native';
+import { Sheet, Field, Btn } from './ui';
+import { C, R } from '../lib/theme';
+import { useData } from '../lib/store';
+import { suggestTagsForMemo } from '../lib/aiTagging';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+
+function SpinInput({ label, value, onChange, placeholder }: any) {
+  const timerRef = useRef<any>(null);
+
+  const changeVal = (delta: number) => {
+    onChange((prev: string) => {
+      const num = parseInt(prev || '0', 10);
+      return String(Math.max(0, num + delta));
+    });
+  };
+
+  const startPress = (delta: number) => {
+    changeVal(delta);
+    timerRef.current = setInterval(() => changeVal(delta), 100);
+  };
+
+  const stopPress = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+  };
+
+  return (
+    <View style={{ flex: 1, marginRight: 8 }}>
+      <Field label={label} value={value} onChangeText={onChange} keyboardType="numeric" placeholder={placeholder} />
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: -15, marginBottom: 10 }}>
+        <Pressable onPressIn={() => startPress(-1)} onPressOut={stopPress} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: C.line, borderRadius: R.sm, marginRight: 5 }}>
+          <Text style={{ color: C.text, fontSize: 16, fontWeight: '900' }}>－</Text>
+        </Pressable>
+        <Pressable onPressIn={() => startPress(1)} onPressOut={stopPress} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: C.line, borderRadius: R.sm }}>
+          <Text style={{ color: C.text, fontSize: 16, fontWeight: '900' }}>＋</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+export default function MemoSheet({ visible, onClose, memo, bookId }: any) {
+  const { memos, addMemo, updateMemo } = useData();
+  const [content, setContent] = useState('');
+  const [chapter, setChapter] = useState('');
+  const [page, setPage] = useState('');
+  const [insight, setInsight] = useState('');
+  const [actionPlan, setActionPlan] = useState('');
+  const [tagInput, setTagInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (memo) {
+      setContent(memo.content || '');
+      setChapter(memo.chapter || '');
+      setPage(memo.page || '');
+      setInsight(memo.insight || '');
+      setActionPlan(memo.actionPlan || '');
+      setTagInput(memo.tags ? memo.tags.join(' ') : '');
+    } else {
+      setContent('');
+      setInsight('');
+      setActionPlan('');
+      setTagInput('');
+      const bookMemos = memos.filter((m) => m.bookId === bookId && !m.deletedAt);
+      if (bookMemos.length > 0) {
+        const lastMemo = bookMemos.sort((a, b) => b.createdAt - a.createdAt)[0];
+        setChapter(lastMemo.chapter || '');
+        setPage(lastMemo.page || '');
+      } else {
+        setChapter('');
+        setPage('');
+      }
+    }
+  }, [visible, memo, bookId, memos]);
+
+  const allExistingTags = useMemo(() => {
+    const set = new Set<string>();
+    memos.forEach((m) => (m.tags || []).forEach((t) => set.add(t)));
+    return Array.from(set);
+  }, [memos]);
+
+  // AIによるタグ提案実行
+  const handleAiSuggestTags = async () => {
+    if (!content.trim()) return;
+    setAiLoading(true);
+    const suggested = await suggestTagsForMemo(content, allExistingTags);
+    if (suggested.length > 0) {
+      const currentTags = tagInput.trim().split(/\s+/).filter(Boolean);
+      const merged = Array.from(new Set([...currentTags, ...suggested]));
+      setTagInput(merged.join(' ') + ' ');
+    }
+    setAiLoading(false);
+  };
+
+  const handleSave = async () => {
+    if (!content.trim()) return;
+    const tags = tagInput.trim().split(/\s+/).filter(Boolean);
+    const chapterVal = chapter.trim() || null;
+    const pageVal = page.trim() || null;
+    const insightVal = insight.trim() || null;
+    const actionPlanVal = actionPlan.trim() || null;
+
+    if (memo) {
+      await updateMemo(memo.id, { content, chapter: chapterVal, page: pageVal, insight: insightVal, actionPlan: actionPlanVal, tags });
+    } else if (bookId) {
+      await addMemo({ bookId, content, chapter: chapterVal, page: pageVal, insight: insightVal, actionPlan: actionPlanVal, tags });
+    }
+    onClose();
+  };
+
+  return (
+    <Sheet visible={visible} onClose={onClose} title={memo ? 'メモを編集' : '新しいメモ'}>
+      <View style={{ minHeight: SCREEN_HEIGHT * 0.25 }}>
+        <Field label="メモ内容" value={content} onChangeText={setContent} multiline minHeight={SCREEN_HEIGHT * 0.2} />
+      </View>
+
+      <View style={{ flexDirection: 'row', width: '100%' }}>
+        <SpinInput label="第◯章" value={chapter} onChange={setChapter} placeholder="例: 1" />
+        <SpinInput label="ページ" value={page} onChange={setPage} placeholder="例: 142" />
+      </View>
+
+      <Field label="💡 気付き・学び（任意）" value={insight} onChangeText={setInsight} multiline placeholder="このメモから感じたことや発見" />
+      <Field label="🎯 アクションプラン（任意）" value={actionPlan} onChangeText={setActionPlan} multiline placeholder="明日から実践すること・行動" />
+
+      {/* タグ入力 ＆ ✨ AIタグ生成ボタン */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700' }}>タグ（スペース区切り）</Text>
+        <Pressable
+          onPress={handleAiSuggestTags}
+          disabled={aiLoading || !content.trim()}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            backgroundColor: C.primary + '33',
+            borderColor: C.primary,
+            borderWidth: 1,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: R.pill,
+            opacity: !content.trim() ? 0.5 : 1,
+          }}
+        >
+          {aiLoading ? (
+            <ActivityIndicator size="small" color={C.primary} />
+          ) : (
+            <>
+              <Text style={{ fontSize: 12 }}>✨</Text>
+              <Text style={{ color: C.text, fontSize: 11, fontWeight: '800' }}>AIタグ自動生成</Text>
+            </>
+          )}
+        </Pressable>
+      </View>
+
+      <Field label="" value={tagInput} onChangeText={setTagInput} placeholder="例: 経済学 マクロ" />
+
+      <Btn label="保存" icon="checkmark" onPress={handleSave} />
+      {memo && (
+        <Btn label="削除" kind="danger" icon="trash-outline" style={{ marginTop: 10 }} onPress={async () => { await updateMemo(memo.id, { deletedAt: Date.now() }); onClose(); }} />
+      )}
+    </Sheet>
+  );
+}
+</file>
+
+<file path="src/components/ui.tsx">
+// File: src/components/ui.tsx
+import React, { useRef, useState } from 'react';
+import {
+  Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { C, GRAD_BG, GRAD_MAIN, R } from '../lib/theme';
+
+export function Screen({ children }: any) {
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <LinearGradient
+        colors={GRAD_BG}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 380 }}
+      />
+      {children}
+    </View>
+  );
+}
+
+export function Title({ children, sub, right }: any) {
+  return (
+    <View style={s.titleRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={s.h1}>{children}</Text>
+        {!!sub && <Text style={s.sub}>{sub}</Text>}
+      </View>
+      {right}
+    </View>
+  );
+}
+
+export function Press({ children, onPress, style, onLongPress }: any) {
+  const a = useRef(new Animated.Value(1)).current;
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onPressIn={() => Animated.spring(a, { toValue: 0.97, useNativeDriver: true }).start()}
+      onPressOut={() => Animated.spring(a, { toValue: 1, useNativeDriver: true }).start()}
+    >
+      <Animated.View style={[{ transform: [{ scale: a }] }, style]}>{children}</Animated.View>
+    </Pressable>
+  );
+}
+
+export function Btn({ label, onPress, icon, kind = 'primary', style }: any) {
+  if (kind === 'primary') {
+    return (
+      <Press onPress={onPress} style={style}>
+        <LinearGradient colors={GRAD_MAIN} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.btn}>
+          {icon ? <Ionicons name={icon} size={17} color="#0B0A14" /> : null}
+          <Text style={s.btnT}>{label}</Text>
+        </LinearGradient>
+      </Press>
+    );
+  }
+  const border = kind === 'danger' ? C.danger : C.line;
+  const color = kind === 'danger' ? C.danger : C.text;
+  return (
+    <Press onPress={onPress} style={style}>
+      <View style={[s.btn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: border }]}>
+        {icon ? <Ionicons name={icon} size={17} color={color} /> : null}
+        <Text style={[s.btnT, { color }]}>{label}</Text>
+      </View>
+    </Press>
+  );
+}
+
+export function Chip({ label, active, onPress, color = C.primary }: any) {
+  return (
+    <Pressable onPress={onPress} style={[s.chip, active && { backgroundColor: color + '33', borderColor: color }]}>
+      <Text style={[s.chipT, active && { color: C.text, fontWeight: '800' }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+export function Card({ children, style, onPress, onLongPress }: any) {
+  const inner = <View style={[s.card, style]}>{children}</View>;
+  if (!onPress && !onLongPress) return inner;
+  return <Press onPress={onPress} onLongPress={onLongPress}>{inner}</Press>;
+}
+
+export function Field({ label, value, onChangeText, placeholder, multiline, minHeight }: any) {
+  return (
+    <View style={{ marginBottom: 12 }}>
+      {!!label && <Text style={s.label}>{label}</Text>}
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={C.sub}
+        multiline={!!multiline}
+        style={[s.input, multiline && { minHeight: minHeight || 110, textAlignVertical: 'top' }]}
+      />
+    </View>
+  );
+}
+
+export function SearchBar({ value, onChangeText, placeholder }: any) {
+  return (
+    <View style={s.search}>
+      <Ionicons name="search" size={16} color={C.sub} />
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder || '検索'}
+        placeholderTextColor={C.sub}
+        style={{ flex: 1, color: C.text, marginLeft: 8, outlineStyle: 'none' as any }}
+      />
+      {!!value && (
+        <Pressable onPress={() => onChangeText('')}>
+          <Ionicons name="close-circle" size={16} color={C.sub} />
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+export function Stars({ value, onChange, size = 18 }: any) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 2 }}>
+      {[1, 2, 3].map((n) => (
+        <Pressable key={n} onPress={onChange ? () => onChange(n) : undefined} hitSlop={6}>
+          <Ionicons
+            name={value >= n ? 'star' : 'star-outline'}
+            size={size}
+            color={value >= n ? C.gold : C.sub}
+          />
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+export function Sheet({ visible, onClose, title, children }: any) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={s.mask}>
+        <View style={s.sheet}>
+          <View style={s.sheetHead}>
+            <Text style={s.sheetTitle}>{title}</Text>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={22} color={C.sub} />
+            </Pressable>
+          </View>
+          <ScrollView style={{ maxHeight: 520 }} keyboardShouldPersistTaps="handled">
+            {children}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+export function Empty({ emoji, title, sub }: any) {
+  return (
+    <View style={{ alignItems: 'center', paddingVertical: 56, paddingHorizontal: 32 }}>
+      <Text style={{ fontSize: 54 }}>{emoji}</Text>
+      <Text style={{ color: C.text, fontWeight: '800', fontSize: 16, marginTop: 12 }}>{title}</Text>
+      {!!sub && <Text style={{ color: C.sub, marginTop: 6, textAlign: 'center', lineHeight: 20 }}>{sub}</Text>}
+    </View>
+  );
+}
+
+export function useToast() {
+  const [msg, setMsg] = useState<string | null>(null);
+  const show = (m: string) => {
+    setMsg(m);
+    setTimeout(() => setMsg(null), 1800);
+  };
+  const node = msg ? (
+    <View style={s.toast}>
+      <Text style={{ color: '#0B0A14', fontWeight: '800' }}>{msg}</Text>
+    </View>
+  ) : null;
+  return { show, node };
+}
+
+const s = StyleSheet.create({
+  titleRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 10 },
+  h1: { color: C.text, fontSize: 28, fontWeight: '900', letterSpacing: -0.8 },
+  sub: { color: C.sub, fontSize: 12.5, marginTop: 4 },
+  btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: R.pill, paddingHorizontal: 20 },
+  btnT: { color: '#0B0A14', fontWeight: '900', fontSize: 14.5 },
+  chip: { paddingHorizontal: 13, paddingVertical: 7, borderRadius: R.pill, borderWidth: 1, borderColor: C.line, backgroundColor: 'rgba(255,255,255,0.04)', marginRight: 8, marginBottom: 8 },
+  chipT: { color: C.sub, fontSize: 12.5, fontWeight: '600' },
+  card: { backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderRadius: R.lg, padding: 14 },
+  label: { color: C.sub, fontSize: 12, marginBottom: 6, fontWeight: '700' },
+  input: { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: C.line, borderRadius: R.md, color: C.text, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 },
+  search: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: C.line, borderRadius: R.pill, paddingHorizontal: 14, height: 42, marginHorizontal: 20, marginBottom: 12 },
+  mask: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#15132B', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 32, borderTopWidth: 1, borderColor: C.line },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  sheetTitle: { color: C.text, fontSize: 18, fontWeight: '900' },
+  toast: { position: 'absolute', bottom: 96, alignSelf: 'center', backgroundColor: C.cyan, paddingHorizontal: 18, paddingVertical: 11, borderRadius: R.pill, left: 0, right: 0, marginHorizontal: 60, alignItems: 'center' },
+});
+</file>
+
+<file path="src/lib/aiTagging.ts">
+// File: src/lib/aiTagging.ts
+
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+// 正しいAPIモデル識別子 (gemini-2.0-flash) に修正
+const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+export async function suggestTagsForMemo(
+  content: string,
+  existingTags: string[]
+): Promise<string[]> {
+  if (!content.trim()) return [];
+
+  const prompt = `
+あなたは書籍メモの整理アシスタントです。
+以下のメモ内容を分析し、最も適切なタグを2〜5個提案してください。
+
+【制約事項】
+1. 可能な限り「既存タグリスト」にあるタグを優先して使用してください。
+2. 既存タグで不足している場合のみ、適切で簡潔な「新規タグ」を追加してください。
+3. 出力は必ずJSONの文字列配列形式のみで返してください。余計な解説やMarkdown記飾（\`\`\`json等）は一切含めないでください。
+
+【既存タグリスト】
+${existingTags.length > 0 ? existingTags.join(', ') : '（なし）'}
+
+【メモ内容】
+${content}
+
+【出力例】
+["経済学", "マクロ経済", "市場原理"]
+`;
+
+  try {
+    const res = await fetch(GEMINI_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    });
+
+    if (!res.ok) throw new Error(`API Error: ${res.status}`);
+
+    const data = await res.json();
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const cleanText = rawText.replace(/```json|```/g, '').trim();
+    const tags: string[] = JSON.parse(cleanText);
+    return Array.isArray(tags) ? tags : [];
+  } catch (e) {
+    console.error('AI Tag Suggestion Error:', e);
+    throw e;
+  }
+}
+
+export type DuplicateTagGroup = {
+  target: string;
+  duplicates: string[];
+};
+
+export async function detectDuplicateTags(allTags: string[]): Promise<DuplicateTagGroup[]> {
+  if (allTags.length < 2) return [];
+
+  const prompt = `
+あなたはデータクレンジングの専門家です。
+以下のタグ一覧から、実質的に同じ意味・人物・概念を表している「表記揺れ」「同義語」「カタカナ/英語表記」「略称/正式名称」のグループを検出してください。
+
+【例】
+- 「オレンジ」と「みかん」 ➔ 代表: "オレンジ", 重複: ["みかん"]
+- 「マリ・キュリー」と「キュリー夫人」 ➔ 代表: "キュリー夫人", 重複: ["マリ・キュリー"]
+- 「Python」と「パイソン」 ➔ 代表: "Python", 重複: ["パイソン"]
+
+【制約事項】
+1. 本当に意味が同一または極めて類似しているものだけを選んでください。少しでも意味が異なるものは含めないでください。
+2. 各グループは {"target": "代表タグ名", "duplicates": ["重複タグ1", "重複タグ2"]} のオブジェクト形式にしてください。
+3. 出力は必ずJSON配列形式のみで返してください。解説やMarkdown記飾は一切含めないでください。
+
+【全タグ一覧】
+${allTags.join(', ')}
+
+【出力例】
+[
+  { "target": "キュリー夫人", "duplicates": ["マリ・キュリー"] },
+  { "target": "Python", "duplicates": ["パイソン"] }
+]
+`;
+
+  try {
+    const res = await fetch(GEMINI_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    });
+
+    if (!res.ok) throw new Error(`API Error: ${res.status}`);
+
+    const data = await res.json();
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const cleanText = rawText.replace(/```json|```/g, '').trim();
+    const result: DuplicateTagGroup[] = JSON.parse(cleanText);
+    return Array.isArray(result) ? result : [];
+  } catch (e) {
+    console.error('AI Duplicate Tag Detection Error:', e);
+    throw e;
+  }
+}
+</file>
+
+<file path="src/lib/booksApi.ts">
+// File: src/lib/booksApi.ts
+export type Found = { title: string; author: string; coverUrl: string | null };
+
+// openBD（日本の書籍・無料・キー不要）
+export async function fetchByIsbn(isbnRaw: string): Promise<Found | null> {
+  const isbn = isbnRaw.replace(/[^0-9Xx]/g, '');
+  if (isbn.length < 10) return null;
+  try {
+    const res = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`);
+    const json = await res.json();
+    const s = json?.[0]?.summary;
+    if (!s) return null;
+    return { title: s.title || '', author: s.author || '', coverUrl: s.cover || null };
+  } catch (e) {
+    return null;
+  }
+}
+
+// Google Books（書名検索・無料・キー不要）
+export async function searchByTitle(q: string): Promise<Found[]> {
+  if (!q.trim()) return [];
+  try {
+    const url =
+      'https://www.googleapis.com/books/v1/volumes?country=JP&maxResults=5&q=' +
+      encodeURIComponent(q);
+    const res = await fetch(url);
+    const json = await res.json();
+    const items = json?.items || [];
+    return items.map((it: any) => {
+      const v = it.volumeInfo || {};
+      const img = v.imageLinks?.thumbnail || v.imageLinks?.smallThumbnail || null;
+      return {
+        title: v.title || '',
+        author: (v.authors || []).join(', '),
+        coverUrl: img ? String(img).replace('http://', 'https://') : null,
+      };
+    });
+  } catch (e) {
+    return [];
+  }
+}
+</file>
+
+<file path="src/lib/cloudinary.ts">
+// File: src/lib/cloudinary.ts
+import { Platform } from 'react-native';
+
+const CLOUD = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
+const PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_PRESET;
+
+export const cloudinaryReady = !!CLOUD && !!PRESET;
+
+export async function uploadImage(uri: string): Promise<string> {
+  if (!cloudinaryReady) throw new Error('Cloudinaryの設定（.env）が未入力です');
+  const form = new FormData();
+  if (Platform.OS === 'web') {
+    const blob = await (await fetch(uri)).blob();
+    form.append('file', blob, 'cover.jpg');
+  } else {
+    form.append('file', { uri, type: 'image/jpeg', name: 'cover.jpg' } as any);
+  }
+  form.append('upload_preset', PRESET as string);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD}/image/upload`, {
+    method: 'POST',
+    body: form,
+  });
+  const json = await res.json();
+  if (!json.secure_url) throw new Error(json?.error?.message || 'アップロードに失敗しました');
+  return json.secure_url as string;
+}
+</file>
+
+<file path="src/lib/firebase.ts">
+// File: src/lib/firebase.ts
+import { Platform } from 'react-native';
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import { getAuth, type Auth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+
+// 取得したFirebaseの設定値を直接セット
+const firebaseConfig = {
+  apiKey: "AIzaSyA07lyf9Xh7OAVB37krgBJZxutrarfmLVg",
+  authDomain: "reading-brain.firebaseapp.com",
+  projectId: "reading-brain",
+  storageBucket: "reading-brain.firebasestorage.app",
+  messagingSenderId: "609566500507",
+  appId: "1:609566500507:web:859108d893518ee362083e",
+};
+
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig as any);
+
+let _auth: Auth;
+if (Platform.OS === 'web') {
+  _auth = getAuth(app);
+} else {
+  try {
+    const authMod: any = require('firebase/auth');
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    _auth = authMod.initializeAuth(app, {
+      persistence: authMod.getReactNativePersistence(AsyncStorage),
+    });
+  } catch (e) {
+    _auth = getAuth(app);
+  }
+}
+
+export const auth = _auth;
+export const db = getFirestore(app);
+</file>
+
+<file path="src/lib/order.ts">
+// File: src/lib/order.ts
+// 小数による並び順管理（1件の移動で1回の書き込みしか発生しない）
+export function orderBetween(prev?: number | null, next?: number | null): number {
+  if (prev == null && next == null) return 1000;
+  if (prev == null) return (next as number) - 1000;
+  if (next == null) return (prev as number) + 1000;
+  return (prev + next) / 2;
+}
+</file>
+
+<file path="src/lib/settings.ts">
+// File: src/lib/settings.ts
+import { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const KEY = 'rb.settings.v1';
+
+export type Settings = { dailyLimit: number; recallMode: boolean };
+export const DEFAULT_SETTINGS: Settings = { dailyLimit: 20, recallMode: true };
+
+let cache: Settings = DEFAULT_SETTINGS;
+const listeners = new Set<(s: Settings) => void>();
+
+export async function loadSettings(): Promise<Settings> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY);
+    if (raw) cache = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch (e) {
+    // 読めない場合は既定値のまま
+  }
+  listeners.forEach((l) => l(cache));
+  return cache;
+}
+
+export async function saveSettings(patch: Partial<Settings>) {
+  cache = { ...cache, ...patch };
+  await AsyncStorage.setItem(KEY, JSON.stringify(cache));
+  listeners.forEach((l) => l(cache));
+}
+
+export function useSettings(): Settings {
+  const [s, setS] = useState<Settings>(cache);
+  useEffect(() => {
+    listeners.add(setS);
+    loadSettings();
+    return () => {
+      listeners.delete(setS);
+    };
+  }, []);
+  return s;
+}
+</file>
+
+<file path="src/lib/srs.ts">
+// File: src/lib/srs.ts
+import type { Memo, ReviewLog } from './types';
+
+export const DAY = 86400000;
+export const MAX_INTERVAL_DAYS = 180;
+export const EXTRA_BATCH = 5;
+
+export function initialSchedule(now: number = Date.now()) {
+  return {
+    rating: 0 as const,
+    dueAt: now + DAY, // 作成翌日に初回復習
+    intervalDays: 0,
+    reps: 0,
+    lapses: 0,
+    lastReviewedAt: null,
+    suspended: false,
+  };
+}
+
+export function nextSchedule(memo: Memo, rating: 1 | 2 | 3, now: number = Date.now()) {
+  const prev = memo.intervalDays || 0;
+  let interval: number;
+  if (rating === 1) interval = 1;
+  else if (rating === 2) interval = prev <= 0 ? 3 : Math.max(1, Math.round(prev * 1.6));
+  else interval = prev <= 0 ? 5 : Math.max(2, Math.round(prev * 2.5));
+  interval = Math.min(interval, MAX_INTERVAL_DAYS);
+  return {
+    rating,
+    intervalDays: interval,
+    dueAt: now + interval * DAY,
+    reps: (memo.reps || 0) + 1,
+    lapses: (memo.lapses || 0) + (rating === 1 ? 1 : 0),
+    lastReviewedAt: now,
+    updatedAt: now,
+  };
+}
+
+// エビングハウスの保持関数 R = exp(-t/S) による推定残存率（0〜1）
+export function retention(memo: Memo, now: number = Date.now()): number {
+  const base = memo.lastReviewedAt ?? memo.createdAt;
+  const t = (now - base) / DAY;
+  const S = Math.max(0.6, (memo.intervalDays || 0) * 0.9 + 0.6 + (memo.reps || 0) * 0.3);
+  const r = Math.exp(-t / S);
+  return Math.max(0, Math.min(1, r));
+}
+
+function ratingWeight(rating: number): number {
+  if (rating === 1) return 3.0;
+  if (rating === 2) return 1.6;
+  if (rating === 3) return 0.7;
+  return 2.2; // 未評価
+}
+
+export function priority(memo: Memo, now: number): number {
+  const overdue = (now - (memo.dueAt || now)) / DAY;
+  const jitter = 0.85 + Math.random() * 0.3;
+  return (overdue + 1) * ratingWeight(memo.rating) * jitter;
+}
+
+export function buildQueue(memos: Memo[], now: number, limit: number): Memo[] {
+  if (limit <= 0) return [];
+  return memos
+    .filter((m) => !m.deletedAt && !m.suspended && (m.dueAt || 0) <= now)
+    .map((m) => ({ m, p: priority(m, now) }))
+    .sort((a, b) => b.p - a.p)
+    .slice(0, limit)
+    .map((x) => x.m);
+}
+
+export function dueCount(memos: Memo[], now: number = Date.now()): number {
+  return memos.filter((m) => !m.deletedAt && !m.suspended && (m.dueAt || 0) <= now).length;
+}
+
+function dayKey(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+export function countToday(reviews: ReviewLog[], now: number = Date.now()): number {
+  const key = dayKey(now);
+  return reviews.filter((r) => dayKey(r.reviewedAt) === key).length;
+}
+
+export function computeStreak(reviews: ReviewLog[], now: number = Date.now()): number {
+  const set = new Set(reviews.map((r) => dayKey(r.reviewedAt)));
+  let streak = 0;
+  let cursor = now;
+  // 今日まだ0件なら「昨日まで」の連続を数える
+  if (!set.has(dayKey(cursor))) cursor -= DAY;
+  while (set.has(dayKey(cursor))) {
+    streak += 1;
+    cursor -= DAY;
+  }
+  return streak;
+}
+</file>
+
+<file path="src/lib/store.tsx">
+// File: src/lib/store.tsx
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut as fbSignOut,
+  type User,
+} from 'firebase/auth';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  limit as qLimit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  writeBatch,
+} from 'firebase/firestore';
+import { auth, db } from './firebase';
+import { initialSchedule, nextSchedule } from './srs';
+import type { Book, Genre, Memo, Rating, ReviewLog, Status, Template } from './types';
+
+const DEFAULT_TEMPLATES = [
+  {
+    name: '3行要約＋アクション',
+    body:
+      'あなたは優秀な編集者です。以下は書籍『{タイトル}』（著者: {著者}）から私が抜き出したメモです。\n\n{選択したメモ}\n\n上記を踏まえ、次の形式で日本語で出力してください。\n1. 3行要約\n2. 最も重要な洞察を1つ（なぜ重要かの根拠付き）\n3. 明日から実行できる具体的アクション3つ',
+  },
+  {
+    name: '反論・穴探し（厳しめ）',
+    body:
+      '以下のメモの主張について、論理の飛躍・反証となるデータ・前提の弱さを厳しく指摘してください。擁護や励ましは不要です。\n\n{選択したメモ}\n\n出力形式:\n1. 主張の要約\n2. 反論3つ（それぞれ根拠を明記）\n3. それでも妥当と言える部分',
+  },
+  {
+    name: '動画台本のネタ化',
+    body:
+      '以下のメモを、視聴者が最後まで見たくなる10分程度の動画構成案に変換してください。\n\n{選択したメモ}\n\n出力: フック(最初の15秒の台詞案)/本編3ブロック(各見出しと要点)/締めのメッセージ/サムネ文言案5つ',
+  },
+  {
+    name: 'ソクラテス式チェック',
+    body:
+      '以下のメモの理解度を確かめるため、私に問いかける質問を10個作ってください。答えは絶対に書かないでください。\n\n{選択したメモ}',
+  },
+];
+
+type Ctx = {
+  user: User | null;
+  authReady: boolean;
+  loaded: boolean;
+  books: Book[];
+  memos: Memo[];
+  templates: Template[];
+  reviews: ReviewLog[];
+  genres: Genre[];
+  signIn: (email: string, pass: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  addBook: (v: Partial<Book>) => Promise<string>;
+  updateBook: (id: string, v: Partial<Book>) => Promise<void>;
+  trashBook: (id: string) => Promise<void>;
+  restoreBook: (id: string) => Promise<void>;
+  addMemo: (v: Partial<Memo> & { bookId: string }) => Promise<void>;
+  updateMemo: (id: string, v: Partial<Memo>) => Promise<void>;
+  trashMemo: (id: string) => Promise<void>;
+  restoreMemo: (id: string) => Promise<void>;
+  hardDelete: (kind: 'books' | 'memos', id: string) => Promise<void>;
+  moveMemo: (id: string, newOrder: number) => Promise<void>;
+  reviewMemo: (memo: Memo, rating: 1 | 2 | 3) => Promise<void>;
+  addTemplate: (name: string, body: string) => Promise<void>;
+  updateTemplate: (id: string, v: Partial<Template>) => Promise<void>;
+  deleteTemplate: (id: string) => Promise<void>;
+  addGenre: (name: string, tagNames?: string[]) => Promise<string>;
+  updateGenre: (id: string, v: Partial<Genre>) => Promise<void>;
+  deleteGenre: (id: string) => Promise<void>;
+  addTagsToGenre: (genreId: string, tagsToAdd: string[]) => Promise<void>;
+  mergeTags: (targetTag: string, duplicateTags: string[]) => Promise<void>;
+  exportJson: () => string;
+  importJson: (raw: string) => Promise<number>;
+};
+
+const DataCtx = createContext<Ctx>({} as Ctx);
+export const useData = () => useContext(DataCtx);
+
+export function DataProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [memos, setMemos] = useState<Memo[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [reviews, setReviews] = useState<ReviewLog[]>([]);
+  const [genres, setGenres] = useState<Genre[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [seedChecked, setSeedChecked] = useState(false);
+
+  useEffect(() => onAuthStateChanged(auth, (u) => { setUser(u); setAuthReady(true); }), []);
+
+  const uid = user?.uid;
+  const col = (sub: string) => collection(db, 'users', uid as string, sub);
+
+  useEffect(() => {
+    if (!uid) {
+      setBooks([]); setMemos([]); setTemplates([]); setReviews([]); setGenres([]);
+      setLoaded(false); setSeedChecked(false);
+      return;
+    }
+    const unsubs = [
+      onSnapshot(collection(db, 'users', uid, 'books'), (s) =>
+        setBooks(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+      ),
+      onSnapshot(collection(db, 'users', uid, 'memos'), (s) => {
+        setMemos(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+        setLoaded(true);
+      }),
+      onSnapshot(collection(db, 'users', uid, 'templates'), (s) =>
+        setTemplates(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+      ),
+      onSnapshot(collection(db, 'users', uid, 'genres'), (s) =>
+        setGenres(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+      ),
+      onSnapshot(
+        query(collection(db, 'users', uid, 'reviews'), orderBy('reviewedAt', 'desc'), qLimit(500)),
+        (s) => setReviews(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+      ),
+    ];
+    return () => unsubs.forEach((f) => f());
+  }, [uid]);
+
+  useEffect(() => {
+    if (!uid || seedChecked) return;
+    (async () => {
+      const snap = await getDocs(collection(db, 'users', uid, 'templates'));
+      if (snap.empty) {
+        const now = Date.now();
+        const batch = writeBatch(db);
+        DEFAULT_TEMPLATES.forEach((t) => {
+          const ref = doc(collection(db, 'users', uid, 'templates'));
+          batch.set(ref, { ...t, usageCount: 0, createdAt: now, updatedAt: now });
+        });
+        await batch.commit();
+      }
+      setSeedChecked(true);
+    })();
+  }, [uid, seedChecked]);
+
+  const api: Ctx = useMemo(() => ({
+    user, authReady, loaded, books, memos, templates, reviews, genres,
+
+    signIn: async (email, pass) => { await signInWithEmailAndPassword(auth, email.trim(), pass); },
+    signOut: async () => { await fbSignOut(auth); },
+
+    addBook: async (v) => {
+      const now = Date.now();
+      const maxOrder = books.reduce((m, b) => Math.max(m, b.order || 0), 0);
+      const ref = await addDoc(col('books'), {
+        title: v.title || '無題',
+        author: v.author || '',
+        coverUrl: v.coverUrl || null,
+        status: (v.status || 'unread') as Status,
+        tags: v.tags || [],
+        order: maxOrder + 1000,
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return ref.id;
+    },
+
+    updateBook: async (id, v) => {
+      const now = Date.now();
+      await updateDoc(doc(db, 'users', uid as string, 'books', id), { ...v, updatedAt: now });
+      if (v.title) {
+        const targets = memos.filter((m) => m.bookId === id && m.bookTitle !== v.title);
+        for (let i = 0; i < targets.length; i += 400) {
+          const batch = writeBatch(db);
+          targets.slice(i, i + 400).forEach((m) =>
+            batch.update(doc(db, 'users', uid as string, 'memos', m.id), {
+              bookTitle: v.title, updatedAt: now,
+            })
+          );
+          await batch.commit();
+        }
+      }
+    },
+
+    trashBook: async (id) => {
+      const now = Date.now();
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'users', uid as string, 'books', id), { deletedAt: now, updatedAt: now });
+      memos.filter((m) => m.bookId === id && !m.deletedAt).slice(0, 400).forEach((m) =>
+        batch.update(doc(db, 'users', uid as string, 'memos', m.id), { deletedAt: now, updatedAt: now })
+      );
+      await batch.commit();
+    },
+
+    restoreBook: async (id) => {
+      await updateDoc(doc(db, 'users', uid as string, 'books', id), { deletedAt: null, updatedAt: Date.now() });
+    },
+
+    addMemo: async (v) => {
+      const now = Date.now();
+      const book = books.find((b) => b.id === v.bookId);
+      const minOrder = memos
+        .filter((m) => m.bookId === v.bookId)
+        .reduce((m, x) => Math.min(m, x.order || 0), 1000);
+      await addDoc(col('memos'), {
+        bookId: v.bookId,
+        bookTitle: book?.title || '',
+        content: v.content || '',
+        page: v.page || null,
+        chapter: v.chapter || null,
+        insight: v.insight || null,
+        actionPlan: v.actionPlan || null,
+        tags: v.tags || [],
+        order: minOrder - 1000,
+        ...initialSchedule(now),
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    },
+
+    updateMemo: async (id, v) => {
+      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { ...v, updatedAt: Date.now() });
+    },
+
+    trashMemo: async (id) => {
+      const now = Date.now();
+      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { deletedAt: now, updatedAt: now });
+    },
+
+    restoreMemo: async (id) => {
+      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { deletedAt: null, updatedAt: Date.now() });
+    },
+
+    hardDelete: async (kind, id) => {
+      await deleteDoc(doc(db, 'users', uid as string, kind, id));
+    },
+
+    moveMemo: async (id, newOrder) => {
+      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { order: newOrder, updatedAt: Date.now() });
+    },
+
+    reviewMemo: async (memo, rating) => {
+      const now = Date.now();
+      const sched = nextSchedule(memo, rating, now);
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'users', uid as string, 'memos', memo.id), sched as any);
+      batch.set(doc(collection(db, 'users', uid as string, 'reviews')), {
+        memoId: memo.id,
+        rating,
+        reviewedAt: now,
+        intervalBefore: memo.intervalDays || 0,
+        intervalAfter: sched.intervalDays,
+      });
+      await batch.commit();
+    },
+
+    addTemplate: async (name, body) => {
+      const now = Date.now();
+      await addDoc(col('templates'), { name, body, usageCount: 0, createdAt: now, updatedAt: now });
+    },
+
+    updateTemplate: async (id, v) => {
+      await updateDoc(doc(db, 'users', uid as string, 'templates', id), { ...v, updatedAt: Date.now() });
+    },
+
+    deleteTemplate: async (id) => {
+      await deleteDoc(doc(db, 'users', uid as string, 'templates', id));
+    },
+
+    addGenre: async (name, tagNames = []) => {
+      const now = Date.now();
+      const ref = await addDoc(col('genres'), { name: name.trim(), tagNames, createdAt: now, updatedAt: now });
+      return ref.id;
+    },
+
+    updateGenre: async (id, v) => {
+      await updateDoc(doc(db, 'users', uid as string, 'genres', id), { ...v, updatedAt: Date.now() });
+    },
+
+    deleteGenre: async (id) => {
+      await deleteDoc(doc(db, 'users', uid as string, 'genres', id));
+    },
+
+    addTagsToGenre: async (genreId, tagsToAdd) => {
+      const target = genres.find((g) => g.id === genreId);
+      if (!target) return;
+      const set = new Set(target.tagNames || []);
+      tagsToAdd.forEach((t) => set.add(t));
+      await updateDoc(doc(db, 'users', uid as string, 'genres', genreId), {
+        tagNames: Array.from(set),
+        updatedAt: Date.now(),
+      });
+    },
+
+    mergeTags: async (targetTag, duplicateTags) => {
+      if (!duplicateTags.length || !uid) return;
+      const now = Date.now();
+      const dupSet = new Set(duplicateTags);
+
+      // 1. Memos のタグ置換
+      const targetMemos = memos.filter((m) =>
+        (m.tags || []).some((t) => dupSet.has(t))
+      );
+      for (let i = 0; i < targetMemos.length; i += 400) {
+        const batch = writeBatch(db);
+        targetMemos.slice(i, i + 400).forEach((m) => {
+          const newTags = Array.from(
+            new Set((m.tags || []).map((t) => (dupSet.has(t) ? targetTag : t)))
+          );
+          batch.update(doc(db, 'users', uid, 'memos', m.id), {
+            tags: newTags,
+            updatedAt: now,
+          });
+        });
+        await batch.commit();
+      }
+
+      // 2. Books のタグ置換
+      const targetBooks = books.filter((b) =>
+        (b.tags || []).some((t) => dupSet.has(t))
+      );
+      for (let i = 0; i < targetBooks.length; i += 400) {
+        const batch = writeBatch(db);
+        targetBooks.slice(i, i + 400).forEach((b) => {
+          const newTags = Array.from(
+            new Set((b.tags || []).map((t) => (dupSet.has(t) ? targetTag : t)))
+          );
+          batch.update(doc(db, 'users', uid, 'books', b.id), {
+            tags: newTags,
+            updatedAt: now,
+          });
+        });
+        await batch.commit();
+      }
+
+      // 3. Genres のタグ置換
+      const targetGenres = genres.filter((g) =>
+        (g.tagNames || []).some((t) => dupSet.has(t))
+      );
+      for (let i = 0; i < targetGenres.length; i += 400) {
+        const batch = writeBatch(db);
+        targetGenres.slice(i, i + 400).forEach((g) => {
+          const newTags = Array.from(
+            new Set((g.tagNames || []).map((t) => (dupSet.has(t) ? targetTag : t)))
+          );
+          batch.update(doc(db, 'users', uid, 'genres', g.id), {
+            tagNames: newTags,
+            updatedAt: now,
+          });
+        });
+        await batch.commit();
+      }
+    },
+
+    exportJson: () =>
+      JSON.stringify({ version: 1, exportedAt: Date.now(), books, memos, templates, genres }, null, 2),
+
+    importJson: async (raw) => {
+      const data = JSON.parse(raw);
+      const rows: Array<[string, any]> = [];
+      (data.books || []).forEach((b: Book) => rows.push(['books', b]));
+      (data.memos || []).forEach((m: Memo) => rows.push(['memos', m]));
+      (data.templates || []).forEach((t: Template) => rows.push(['templates', t]));
+      (data.genres || []).forEach((g: Genre) => rows.push(['genres', g]));
+      for (let i = 0; i < rows.length; i += 400) {
+        const batch = writeBatch(db);
+        rows.slice(i, i + 400).forEach(([kind, row]) => {
+          const { id, ...rest } = row;
+          batch.set(doc(db, 'users', uid as string, kind, id), rest, { merge: true });
+        });
+        await batch.commit();
+      }
+      return rows.length;
+    },
+  }), [user, authReady, loaded, books, memos, templates, reviews, genres, uid]);
+
+  return <DataCtx.Provider value={api}>{children}</DataCtx.Provider>;
+}
+
+export function uniqueTags(list: Array<{ tags?: string[] }>): string[] {
+  const set = new Set<string>();
+  list.forEach((x) => (x.tags || []).forEach((t) => t && set.add(t)));
+  return Array.from(set).sort();
+}
+
+export function parseTags(input: string): string[] {
+  return input
+    .split(/[,、\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+export type { Rating };
+</file>
+
+<file path="src/lib/theme.ts">
+// File: src/lib/theme.ts
+
+export const C = {
+  bg: '#0B0A14',
+  card: '#1A182D',      // カード背景
+  line: '#322E50',      // 枠線
+  text: '#FFFFFF',      // メイン文字
+  sub: '#A1A1AA',       // サブ文字
+  primary: '#8B5CF6',
+  cyan: '#06B6D4',
+  danger: '#EF4444',
+  gold: '#F59E0B',      // 星評価用ゴールド
+};
+
+export const R = {
+  sm: 8,
+  md: 12,
+  lg: 16,
+  pill: 9999,           // 丸枠用
+};
+
+// グラデーション設定群（型を確定）
+export const GRAD_BG = ['#0B0A14', '#181528', '#0B0A14'] as const;
+export const GRAD_MAIN: [string, string] = ['#8B5CF6', '#06B6D4'];
+export const GRAD_HOT: [string, string] = ['#EF4444', '#F59E0B']; // ← 追加
+export const GRAD_CARD: [string, string] = ['#1A182D', '#151326'];
+
+// 読書ステータスの色とラベル
+export const STATUS_COLOR: Record<string, string> = {
+  unread: C.sub,
+  reading: C.primary,
+  done: C.cyan,
+};
+
+export const STATUS_LABEL: Record<string, string> = {
+  unread: '未読',
+  reading: '読書中',
+  done: '読了',
+};
+</file>
+
+<file path="src/lib/types.ts">
+// File: src/lib/types.ts
+export type Status = 'unread' | 'reading' | 'done';
+export type Rating = 0 | 1 | 2 | 3;
+
+export type Book = {
+  id: string;
+  title: string;
+  author: string;
+  coverUrl: string | null;
+  status: Status;
+  tags: string[];
+  order: number;
+  deletedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+// File: src/lib/types.ts
+
+export type Memo = {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  content: string;
+  page: string | null;
+  chapter: string | null;
+  insight: string | null;      // ← これを追加（気付き）
+  actionPlan: string | null;   // ← これを追加（アクションプラン）
+  tags: string[];
+  rating: Rating;
+  order: number;
+  dueAt: number;
+  intervalDays: number;
+  reps: number;
+  lapses: number;
+  lastReviewedAt: number | null;
+  suspended: boolean;
+  deletedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type Template = {
+  id: string;
+  name: string;
+  body: string;
+  usageCount: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ReviewLog = {
+  id: string;
+  memoId: string;
+  rating: 1 | 2 | 3;
+  reviewedAt: number;
+  intervalBefore: number;
+  intervalAfter: number;
+};
+
+// File: src/lib/types.ts 内の一番下に追加
+
+export type Genre = {
+  id: string;
+  name: string;
+  tagNames: string[];  // このジャンルに含まれるタグ名の配列
+  createdAt: number;
+  updatedAt: number;
+};
+</file>
+
+<file path=".gitignore">
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+</file>
+
+<file path="AGENTS.md">
+# Expo HAS CHANGED
+
+Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before writing any code.
+</file>
+
+<file path="app.json">
+{
+  "expo": {
+    "name": "Reading Brain",
+    "slug": "reading-brain",
+    "scheme": "readingbrain",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0A14",
+    "assetBundlePatterns": ["**/*"],
+    "plugins": ["expo-router"],
+    "ios": { "supportsTablet": true },
+    "android": {
+      "package": "com.readingbrain.app",
+      "adaptiveIcon": { "backgroundColor": "#0B0A14" }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "experiments": { "typedRoutes": false }
+  }
+}
+</file>
+
+<file path="CLAUDE.md">
+@AGENTS.md
+</file>
+
+<file path="LICENSE">
+The MIT License (MIT)
+
+Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</file>
+
+<file path="metro.config.js">
+const { getDefaultConfig } = require('expo/metro-config');
+
+const config = getDefaultConfig(__dirname);
+
+// Firebase JS SDK のモジュール解決対策（package exports を有効化）
+config.resolver.unstable_enablePackageExports = true;
+config.resolver.unstable_conditionNames = ['browser', 'require', 'react-native'];
+
+module.exports = config;
+</file>
+
+<file path="package.json">
+{
+  "name": "reading-brain",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@expo/metro-runtime": "~57.0.11",
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~57.0.14",
+    "expo-clipboard": "~57.0.1",
+    "expo-constants": "~57.0.12",
+    "expo-image-picker": "~57.0.11",
+    "expo-linear-gradient": "~57.0.1",
+    "expo-linking": "~57.0.6",
+    "expo-router": "~57.0.14",
+    "expo-status-bar": "~57.0.1",
+    "firebase": "^12.17.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-web": "^0.21.2"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "private": true
+}
+</file>
+
+<file path="repomix実行.bat">
+@echo off
+cd /d "%~dp0"
+npx repomix
+pause
+</file>
+
+<file path="tsconfig.json">
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true
+  }
+}
+</file>
+
+<file path="これまでのAIとのやりとり">
+
+</file>
+
+</files>

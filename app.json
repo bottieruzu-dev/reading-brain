@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Reading Brain",
+    "slug": "reading-brain",
+    "scheme": "readingbrain",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0A14",
+    "assetBundlePatterns": ["**/*"],
+    "plugins": ["expo-router"],
+    "ios": { "supportsTablet": true },
+    "android": {
+      "package": "com.readingbrain.app",
+      "adaptiveIcon": { "backgroundColor": "#0B0A14" }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "experiments": { "typedRoutes": false }
+  }
+}
