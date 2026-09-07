@@ -51,7 +51,7 @@ export default function CrossMemos() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
 
-  // 一括ギャルコメント生成処理（進捗率表示・待機時間・詳細エラー通知付き）
+  // レート制限対応・自動リトライ機能付きの一括ギャル生成
   const handleBulkGyaru = async () => {
     const total = unGyaruMemos.length;
     if (total === 0 || bulkGyaruLoading) return;
@@ -65,35 +65,43 @@ export default function CrossMemos() {
       const percent = Math.round(((idx + 1) / total) * 100);
       toast.show(`ギャルが返信中… ${idx + 1}/${total}件 (${percent}%)`);
 
-      try {
-        const comment = await generateGyaruComment(m.content);
-        if (comment) {
-          await updateMemo(m.id, { gyaruComment: comment });
-          successCount++;
-        } else {
-          failCount++;
+      let comment = '';
+      let success = false;
+
+      // エラー時は最大3回までリトライ
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          comment = await generateGyaruComment(m.content);
+          if (comment) {
+            success = true;
+            break;
+          }
+        } catch (e) {
+          console.warn(`Attempt ${attempt + 1} failed for memo ${m.id}. Retrying...`);
+          // 制限エラー時は5秒待機してからリトライ
+          await new Promise((resolve) => setTimeout(resolve, 5000));
         }
-      } catch (e: any) {
-        console.error('Bulk Gyaru Error:', e);
+      }
+
+      if (success && comment) {
+        await updateMemo(m.id, { gyaruComment: comment });
+        successCount++;
+      } else {
         failCount++;
       }
 
-      // 503エラー（過負荷制限）防止のための1秒インターバル
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // 1分間に15回制限(15RPM)を回避するため、4.2秒の安全間隔を確保
+      await new Promise((resolve) => setTimeout(resolve, 4200));
     }
 
     setBulkGyaruLoading(false);
 
-    // 画面への最終完了・エラー通知ダイアログ
     if (failCount === 0) {
       toast.show(`🎉 全${successCount}件に一言を追加しました！`);
-      alert(`【一括生成完了】\n全${successCount}件のメモにギャルの一言を正常に追加しました！`);
-    } else if (successCount > 0) {
-      toast.show(`${successCount}件成功 / ${failCount}件エラー`);
-      alert(`【一部完了】\n${successCount}件に一言を追加しましたが、${failCount}件は通信制限等で失敗しました。時間をおいて再試行してください。`);
+      alert(`【一括生成完了】\n残りの${successCount}件のメモにギャルの一言を正常に追加しました！`);
     } else {
-      toast.show(`通信エラーが発生しました`);
-      alert(`【エラー】\nGoogle APIのアクセス制限(503エラー等)により生成に失敗しました。数分時間をおいてから再度お試しください。`);
+      toast.show(`${successCount}件成功 / ${failCount}件エラー`);
+      alert(`【一部完了】\n${successCount}件に追加しました。残り${failCount}件は時間を置いて「ギャル一括」を押すと残りの処理を再開できます。`);
     }
   };
 
