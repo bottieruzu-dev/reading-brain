@@ -51,35 +51,39 @@ export default function CrossMemos() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
 
-  // レート制限対応・自動リトライ機能付きの一括ギャル生成
+  // レート制限（429）安全停止・長期間待機機能付き一括生成
   const handleBulkGyaru = async () => {
     const total = unGyaruMemos.length;
     if (total === 0 || bulkGyaruLoading) return;
 
     setBulkGyaruLoading(true);
     let successCount = 0;
-    let failCount = 0;
 
     for (let idx = 0; idx < total; idx++) {
       const m = unGyaruMemos[idx];
       const percent = Math.round(((idx + 1) / total) * 100);
-      toast.show(`ギャルが返信中… ${idx + 1}/${total}件 (${percent}%)`);
 
       let comment = '';
       let success = false;
 
-      // エラー時は最大3回までリトライ
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        toast.show(`ギャル返信中… ${idx + 1}/${total}件 (${percent}%)${attempt > 0 ? ' [制限解除待ち]' : ''}`);
+
         try {
           comment = await generateGyaruComment(m.content);
           if (comment) {
             success = true;
             break;
           }
-        } catch (e) {
-          console.warn(`Attempt ${attempt + 1} failed for memo ${m.id}. Retrying...`);
-          // 制限エラー時は5秒待機してからリトライ
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+        } catch (e: any) {
+          const is429 = e?.message?.includes('429');
+          if (is429) {
+            // Google制限発生時はブロック解除のために60秒待機
+            toast.show(`API制限検出：60秒待機中… (${idx + 1}/${total}件)`);
+            await new Promise((resolve) => setTimeout(resolve, 60000));
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+          }
         }
       }
 
@@ -87,22 +91,19 @@ export default function CrossMemos() {
         await updateMemo(m.id, { gyaruComment: comment });
         successCount++;
       } else {
-        failCount++;
+        // 解除されなかった場合は無理に進めずここで中断
+        setBulkGyaruLoading(false);
+        alert(`【API制限のため一時停止】\n${successCount}件にギャルの一言を追加しました。\n\nGoogle APIの通信制限(429)に達したため安全のため処理を中断しました。\n数分おいてから再度「ギャル一括」を押せば続きから再開できます。`);
+        return;
       }
 
-      // 1分間に15回制限(15RPM)を回避するため、4.2秒の安全間隔を確保
-      await new Promise((resolve) => setTimeout(resolve, 4200));
+      // 15RPM（1分15回）制限を余裕で回避するため6秒間隔（1分10回）
+      await new Promise((resolve) => setTimeout(resolve, 6000));
     }
 
     setBulkGyaruLoading(false);
-
-    if (failCount === 0) {
-      toast.show(`🎉 全${successCount}件に一言を追加しました！`);
-      alert(`【一括生成完了】\n残りの${successCount}件のメモにギャルの一言を正常に追加しました！`);
-    } else {
-      toast.show(`${successCount}件成功 / ${failCount}件エラー`);
-      alert(`【一部完了】\n${successCount}件に追加しました。残り${failCount}件は時間を置いて「ギャル一括」を押すと残りの処理を再開できます。`);
-    }
+    toast.show(`🎉 全${successCount}件に一言を追加しました！`);
+    alert(`【一括生成完了】\n全${successCount}件のメモにギャルの一言を正常に追加しました！`);
   };
 
   return (
