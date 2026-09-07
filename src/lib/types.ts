@@ -1,5 +1,5 @@
 // File: src/lib/types.ts
-export type Status = 'unread' | 'reading' | 'done';
+export type Status = 'wish' | 'unread' | 'reading' | 'done';
 export type Rating = 0 | 1 | 2 | 3;
 
 export type Book = {
@@ -9,13 +9,13 @@ export type Book = {
   coverUrl: string | null;
   status: Status;
   tags: string[];
+  wishReason?: string | null; // 読む目的・きっかけ
+  priority?: number;          // 優先度（1: 低, 2: 中, 3: 高/TOP3）
   order: number;
   deletedAt: number | null;
   createdAt: number;
   updatedAt: number;
 };
-
-// File: src/lib/types.ts
 
 export type Memo = {
   id: string;
@@ -24,8 +24,8 @@ export type Memo = {
   content: string;
   page: string | null;
   chapter: string | null;
-  insight: string | null;      // ← これを追加（気付き）
-  actionPlan: string | null;   // ← これを追加（アクションプラン）
+  insight: string | null;
+  actionPlan: string | null;
   tags: string[];
   rating: Rating;
   order: number;
@@ -58,12 +58,10 @@ export type ReviewLog = {
   intervalAfter: number;
 };
 
-// File: src/lib/types.ts 内の一番下に追加
-
 export type Genre = {
   id: string;
   name: string;
-  tagNames: string[];  // このジャンルに含まれるタグ名の配列
+  tagNames: string[];
   createdAt: number;
   updatedAt: number;
 };
