@@ -2,8 +2,8 @@
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 
-// 呼び出しモデルを gemini-3.6-flash のみに固定
-const TARGET_MODEL = 'gemini-3.6-flash';
+// 無料枠で1日1,500回・1分間15回まで使用できる標準モデルを指定
+const TARGET_MODEL = 'gemini-2.0-flash';
 
 async function fetchGeminiWithFallback(prompt: string): Promise<string> {
   if (!GEMINI_API_KEY) {
