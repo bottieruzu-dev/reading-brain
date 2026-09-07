@@ -21,7 +21,7 @@ export default function CrossMemos() {
   const [bulkGyaruLoading, setBulkGyaruLoading] = useState(false);
 
   const alive = memos.filter((m) => !m.deletedAt);
-  const un GyaruMemos = alive.filter((m) => !m.gyaruComment && !!m.content.trim());
+  const unGyaruMemos = alive.filter((m) => !m.gyaruComment && !!m.content.trim());
 
   const tagsWithCount = useMemo(() => {
     const counts: Record<string, number> = {};

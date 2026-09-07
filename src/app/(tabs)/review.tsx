@@ -1,6 +1,6 @@
 // File: src/app/(tabs)/review.tsx
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Btn, Card, Empty, Press, Screen, Title } from '../../components/ui';
@@ -135,6 +135,33 @@ export default function Review() {
                 {!!current.actionPlan && (
                   <View style={{ backgroundColor: C.gold + '22', padding: 10, borderRadius: R.sm, marginTop: 8 }}>
                     <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>🎯 {current.actionPlan}</Text>
+                  </View>
+                )}
+
+                {/* 🌸 ギャルの一言コメント表示（復習カード内） */}
+                {!!current.gyaruComment && (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#FF149318',
+                      padding: 10,
+                      borderRadius: R.md,
+                      marginTop: 10,
+                      borderWidth: 1,
+                      borderColor: '#FF69B466',
+                    }}
+                  >
+                    <Image
+                      source={require('../../../assets/gyaru.png')}
+                      style={{ width: 42, height: 42, borderRadius: 21, marginRight: 10 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#FF69B4', fontSize: 10.5, fontWeight: '900' }}>ギャルの本質一言</Text>
+                      <Text style={{ color: C.text, fontSize: 12.5, fontWeight: '700', marginTop: 2, lineHeight: 18 }}>
+                        {current.gyaruComment}
+                      </Text>
+                    </View>
                   </View>
                 )}
               </View>
