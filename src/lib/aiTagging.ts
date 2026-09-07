@@ -2,8 +2,8 @@
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 
-// 無料枠で1日1,500回・1分間15回まで使用できる標準モデルを指定
-const TARGET_MODEL = 'gemini-2.0-flash';
+// 1日1,500回・1分15回無料の正式標準モデル
+const TARGET_MODEL = 'gemini-1.5-flash';
 
 async function fetchGeminiWithFallback(prompt: string): Promise<string> {
   if (!GEMINI_API_KEY) {
@@ -30,8 +30,6 @@ async function fetchGeminiWithFallback(prompt: string): Promise<string> {
         .join('\n');
 
       if (fullText) return fullText;
-    } else if (res.status === 429) {
-      throw new Error('API Error 429');
     } else {
       const errJson = await res.json().catch(() => ({}));
       throw new Error(`API Error ${res.status}`);
