@@ -47,6 +47,7 @@ assets/
   android-icon-foreground.png
   android-icon-monochrome.png
   favicon.png
+  gyaru.png
   icon.png
   splash-icon.png
 public/
@@ -88,11 +89,23 @@ metro.config.js
 package.json
 repomix実行.bat
 tsconfig.json
+vercel.json
 これまでのAIとのやりとり
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="repomix実行.bat">
+@echo off
+cd /d "%~dp0"
+npx repomix
+pause
+</file>
+
+<file path="これまでのAIとのやりとり">
+
+</file>
 
 <file path=".claude/settings.json">
 {
@@ -157,654 +170,6 @@ export default function TabsLayout() {
         options={{ title: 'AI活用', tabBarIcon: ({ color, size }) => <Ionicons name="sparkles" size={size} color={color} /> }}
       />
     </Tabs>
-  );
-}
-</file>
-
-<file path="src/app/(tabs)/index.tsx">
-// File: src/app/(tabs)/index.tsx
-import React, { useMemo, useState } from 'react';
-import { FlatList, Image, Pressable, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { Btn, Chip, Field, Press, Screen, SearchBar, Sheet, Title, Empty, useToast } from '../../components/ui';
-import { C, GRAD_MAIN, R, STATUS_COLOR, STATUS_LABEL } from '../../lib/theme';
-import { parseTags, uniqueTags, useData } from '../../lib/store';
-import { dueCount } from '../../lib/srs';
-import { fetchByIsbn, searchByTitle } from '../../lib/booksApi';
-import { cloudinaryReady, uploadImage } from '../../lib/cloudinary';
-
-export default function BookShelf() {
-  const { books, memos, addBook } = useData();
-  const toast = useToast();
-  const [q, setQ] = useState('');
-  const [status, setStatus] = useState('all');
-  const [tag, setTag] = useState('');
-  const [open, setOpen] = useState(false);
-
-  const alive = books.filter((b) => !b.deletedAt);
-  const tags = uniqueTags(alive);
-
-  const list = useMemo(() => {
-    const kw = q.trim().toLowerCase();
-    return alive
-      .filter((b) => (status === 'all' ? true : b.status === status))
-      .filter((b) => (tag ? (b.tags || []).includes(tag) : true))
-      .filter((b) => (kw ? (b.title + b.author).toLowerCase().includes(kw) : true))
-      .sort((a, b) => (a.order || 0) - (b.order || 0));
-  }, [alive, q, status, tag]);
-
-  const countOf = (id: string) => memos.filter((m) => m.bookId === id && !m.deletedAt).length;
-  const due = dueCount(memos);
-
-  return (
-    <Screen>
-      <FlatList
-        data={list}
-        keyExtractor={(b) => b.id}
-        numColumns={2}
-        columnWrapperStyle={{ paddingHorizontal: 14, gap: 12 }}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        ListHeaderComponent={
-          <View>
-            <Title sub={`${alive.length}冊 / メモ${memos.filter((m) => !m.deletedAt).length}件`}
-              right={
-                <Pressable onPress={() => router.push('/settings')} hitSlop={10}>
-                  <Ionicons name="settings-outline" size={22} color={C.sub} />
-                </Pressable>
-              }>
-              My Library
-            </Title>
-
-            {due > 0 && (
-              <Press onPress={() => router.push('/review')} style={{ marginHorizontal: 20, marginBottom: 14 }}>
-                <LinearGradient colors={GRAD_MAIN} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                  style={{ borderRadius: R.lg, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <Text style={{ fontSize: 24 }}>⚡</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 15 }}>今日の復習が {due} 件</Text>
-                    <Text style={{ color: '#0B0A1499', fontSize: 11.5, fontWeight: '700' }}>忘れかけの今がいちばん効く</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="#0B0A14" />
-                </LinearGradient>
-              </Press>
-            )}
-
-            <SearchBar value={q} onChangeText={setQ} placeholder="タイトル・著者で検索" />
-
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 }}>
-              {['all', 'unread', 'reading', 'done'].map((s) => (
-                <Chip key={s} label={s === 'all' ? 'すべて' : STATUS_LABEL[s]} active={status === s}
-                  color={s === 'all' ? C.primary : STATUS_COLOR[s]} onPress={() => setStatus(s)} />
-              ))}
-            </View>
-
-            {!!tags.length && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, marginTop: 2 }}>
-                {tags.map((t) => (
-                  <Chip key={t} label={'#' + t} active={tag === t} color={C.cyan}
-                    onPress={() => setTag(tag === t ? '' : t)} />
-                ))}
-              </View>
-            )}
-          </View>
-        }
-        ListEmptyComponent={<Empty emoji="📖" title="まだ1冊もありません" sub="右下の＋から本を追加。ISBNか書名を入れれば表紙は自動で取ってきます。" />}
-        renderItem={({ item }) => (
-          <Press onPress={() => router.push(`/book/${item.id}`)} style={{ flex: 1, marginBottom: 12 }}>
-            <View style={{ borderRadius: R.lg, overflow: 'hidden', backgroundColor: C.card, borderWidth: 1, borderColor: C.line }}>
-              {item.coverUrl ? (
-                <Image source={{ uri: item.coverUrl }} style={{ width: '100%', height: 190 }} resizeMode="cover" />
-              ) : (
-                <LinearGradient colors={['#3A2E7A', '#16143A']} style={{ height: 190, alignItems: 'center', justifyContent: 'center', padding: 12 }}>
-                  <Text style={{ fontSize: 30 }}>📗</Text>
-                  <Text numberOfLines={3} style={{ color: C.text, fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 8 }}>{item.title}</Text>
-                </LinearGradient>
-              )}
-              <View style={{ padding: 12 }}>
-                <Text numberOfLines={2} style={{ color: C.text, fontWeight: '800', fontSize: 13.5, lineHeight: 19 }}>{item.title}</Text>
-                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 11, marginTop: 3 }}>{item.author || '著者未設定'}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 9 }}>
-                  <Text style={{ color: STATUS_COLOR[item.status], fontSize: 10.5, fontWeight: '900' }}>{STATUS_LABEL[item.status]}</Text>
-                  <Text style={{ color: C.sub, fontSize: 10.5, fontWeight: '700' }}>📝 {countOf(item.id)}</Text>
-                </View>
-              </View>
-            </View>
-          </Press>
-        )}
-      />
-
-      <Press onPress={() => setOpen(true)} style={{ position: 'absolute', right: 20, bottom: 20 }}>
-        <LinearGradient colors={GRAD_MAIN} style={{ width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="add" size={30} color="#0B0A14" />
-        </LinearGradient>
-      </Press>
-
-      <AddBookSheet visible={open} onClose={() => setOpen(false)} onDone={(msg: string) => toast.show(msg)} addBook={addBook} />
-      {toast.node}
-    </Screen>
-  );
-}
-
-function AddBookSheet({ visible, onClose, onDone, addBook }: any) {
-  const [title, setTitle] = useState('');
-  const [author, setAuthor] = useState('');
-  const [isbn, setIsbn] = useState('');
-  const [coverUrl, setCoverUrl] = useState<string | null>(null);
-  const [tags, setTags] = useState('');
-  const [status, setStatus] = useState('reading');
-  const [cands, setCands] = useState<any[]>([]);
-  const [busy, setBusy] = useState('');
-
-  const reset = () => { setTitle(''); setAuthor(''); setIsbn(''); setCoverUrl(null); setTags(''); setStatus('reading'); setCands([]); };
-
-  const auto = async () => {
-    setBusy('検索中…');
-    if (isbn.trim()) {
-      const r = await fetchByIsbn(isbn);
-      if (r) { setTitle(r.title); setAuthor(r.author); setCoverUrl(r.coverUrl); setBusy(''); return; }
-    }
-    const list = await searchByTitle(title || isbn);
-    setCands(list);
-    setBusy(list.length ? '' : '見つかりませんでした（手入力してください）');
-  };
-
-  const pick = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
-    if (res.canceled) return;
-    setBusy('アップロード中…');
-    try { setCoverUrl(await uploadImage(res.assets[0].uri)); setBusy(''); }
-    catch (e: any) { setBusy('失敗：' + e.message); }
-  };
-
-  return (
-    <Sheet visible={visible} onClose={onClose} title="本を追加">
-      <Field label="ISBN（13桁・任意）" value={isbn} onChangeText={setIsbn} placeholder="9784…" />
-      <Field label="タイトル" value={title} onChangeText={setTitle} placeholder="サピエンス全史" />
-      <Field label="著者" value={author} onChangeText={setAuthor} placeholder="ユヴァル・ノア・ハラリ" />
-      <Btn label="ISBN/書名から自動取得" kind="ghost" icon="cloud-download-outline" onPress={auto} />
-      {!!busy && <Text style={{ color: C.sub, fontSize: 12, marginTop: 8 }}>{busy}</Text>}
-
-      {!!cands.length && (
-        <View style={{ marginTop: 12 }}>
-          <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>候補をタップして反映</Text>
-          {cands.map((c, i) => (
-            <Pressable key={i} onPress={() => { setTitle(c.title); setAuthor(c.author); setCoverUrl(c.coverUrl); setCands([]); }}
-              style={{ flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 8 }}>
-              {c.coverUrl ? <Image source={{ uri: c.coverUrl }} style={{ width: 34, height: 48, borderRadius: 4 }} /> : <Text>📕</Text>}
-              <View style={{ flex: 1 }}>
-                <Text numberOfLines={1} style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>{c.title}</Text>
-                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 11 }}>{c.author}</Text>
-              </View>
-            </Pressable>
-          ))}
-        </View>
-      )}
-
-      {!!coverUrl && (
-        <View style={{ alignItems: 'center', marginVertical: 12 }}>
-          <Image source={{ uri: coverUrl }} style={{ width: 88, height: 124, borderRadius: 8 }} />
-        </View>
-      )}
-
-      {cloudinaryReady && (
-        <Btn label="端末から表紙をアップロード" kind="ghost" icon="image-outline" style={{ marginTop: 10 }} onPress={pick} />
-      )}
-
-      <View style={{ height: 14 }} />
-      <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>ステータス</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-        {['unread', 'reading', 'done'].map((s) => (
-          <Chip key={s} label={STATUS_LABEL[s]} active={status === s} color={STATUS_COLOR[s]} onPress={() => setStatus(s)} />
-        ))}
-      </View>
-      <Field label="タグ（スペース区切り）" value={tags} onChangeText={setTags} placeholder="投資 心理学" />
-      <Btn
-        label="本棚に追加"
-        icon="add"
-        onPress={async () => {
-          if (!title.trim()) return;
-          await addBook({ title: title.trim(), author: author.trim(), coverUrl, status, tags: parseTags(tags) });
-          reset(); onClose(); onDone('本棚に追加しました');
-        }}
-      />
-    </Sheet>
-  );
-}
-</file>
-
-<file path="src/app/(tabs)/memos.tsx">
-// File: src/app/(tabs)/memos.tsx
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Btn, Card, Chip, Empty, Field, Press, Screen, SearchBar, Sheet, Stars, Title, useToast } from '../../components/ui';
-import MemoCard from '../../components/MemoCard';
-import { C, R } from '../../lib/theme';
-import { useData } from '../../lib/store';
-import { detectDuplicateTags, DuplicateTagGroup } from '../../lib/aiTagging';
-
-export default function CrossMemos() {
-  const { memos, updateMemo, genres } = useData();
-  const toast = useToast();
-  const [q, setQ] = useState('');
-  const [tag, setTag] = useState('');
-  const [selectedGenreId, setSelectedGenreId] = useState<string | null>(null);
-  const [star, setStar] = useState(0);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
-  const [genreManageOpen, setGenreManageOpen] = useState(false);
-
-  const alive = memos.filter((m) => !m.deletedAt);
-
-  const tagsWithCount = useMemo(() => {
-    const counts: Record<string, number> = {};
-    alive.forEach((m) => {
-      (m.tags || []).forEach((t) => {
-        counts[t] = (counts[t] || 0) + 1;
-      });
-    });
-    return Object.keys(counts)
-      .sort((a, b) => counts[b] - counts[a])
-      .map((t) => ({ name: t, count: counts[t] }));
-  }, [alive]);
-
-  const currentGenre = genres.find((g) => g.id === selectedGenreId);
-  const genreTagNames = currentGenre?.tagNames || [];
-
-  const list = useMemo(() => {
-    const kw = q.trim().toLowerCase();
-    return alive
-      .filter((m) => (kw ? (m.content + ' ' + m.bookTitle).toLowerCase().includes(kw) : true))
-      .filter((m) => (tag ? (m.tags || []).includes(tag) : true))
-      .filter((m) => {
-        if (!selectedGenreId || !currentGenre) return true;
-        return (m.tags || []).some((t) => genreTagNames.includes(t));
-      })
-      .filter((m) => (star ? m.rating === star : true))
-      .sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
-
-  return (
-    <Screen>
-      <FlatList
-        data={list}
-        keyExtractor={(m) => m.id}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        ListHeaderComponent={
-          <View style={{ marginHorizontal: -20 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 20 }}>
-              <Title sub={`${list.length}件 / 全${alive.length}件`}>横断メモ</Title>
-              <Press onPress={() => setGenreManageOpen(true)}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.card, borderColor: C.line, borderWidth: 1, paddingHorizontal: 12, height: 36, borderRadius: R.pill }}>
-                  <Text style={{ fontSize: 13 }}>🏷️</Text>
-                  <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>ジャンル管理</Text>
-                </View>
-              </Press>
-            </View>
-
-            <SearchBar value={q} onChangeText={setQ} placeholder="全部の本のメモを全文検索" />
-
-            {genres.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 8, marginBottom: 10 }}>
-                <Chip label="全ジャンル" active={!selectedGenreId} onPress={() => setSelectedGenreId(null)} />
-                {genres.map((g) => (
-                  <Chip
-                    key={g.id}
-                    label={`📁 ${g.name}`}
-                    active={selectedGenreId === g.id}
-                    color={C.primary}
-                    onPress={() => setSelectedGenreId(selectedGenreId === g.id ? null : g.id)}
-                  />
-                ))}
-              </ScrollView>
-            )}
-
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 }}>
-              {[1, 2, 3].map((n) => (
-                <Chip key={n} label={'★' + n} active={star === n} color={C.gold} onPress={() => setStar(star === n ? 0 : n)} />
-              ))}
-              {tagsWithCount.map((t) => {
-                if (selectedGenreId && !genreTagNames.includes(t.name)) return null;
-                return (
-                  <Chip
-                    key={t.name}
-                    label={`#${t.name} (${t.count})`}
-                    active={tag === t.name}
-                    color={C.cyan}
-                    onPress={() => setTag(tag === t.name ? '' : t.name)}
-                  />
-                );
-              })}
-            </View>
-          </View>
-        }
-        ListEmptyComponent={<Empty emoji="🔎" title="該当するメモがありません" sub="条件を外すか、本棚からメモを追加してください。" />}
-        renderItem={({ item }) =>
-          openId === item.id ? (
-            <Card style={{ marginBottom: 10 }}>
-              <Text style={{ color: C.cyan, fontSize: 11, fontWeight: '800', marginBottom: 8 }}>{item.bookTitle}</Text>
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                multiline
-                style={{ color: C.text, fontSize: 14.5, lineHeight: 21, minHeight: 110, textAlignVertical: 'top' }}
-              />
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
-                <Stars value={item.rating} onChange={(n: number) => updateMemo(item.id, { rating: n as any })} size={20} />
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => setOpenId(null)}>
-                    <Text style={{ color: C.sub, fontWeight: '800', padding: 8 }}>閉じる</Text>
-                  </Pressable>
-                  <Btn label="保存" onPress={async () => {
-                    await updateMemo(item.id, { content: draft });
-                    setOpenId(null); toast.show('保存しました');
-                  }} />
-                </View>
-              </View>
-            </Card>
-          ) : (
-            <MemoCard memo={item} showBook onPress={() => { setOpenId(item.id); setDraft(item.content); }} />
-          )
-        }
-      />
-
-      <GenreManageSheet visible={genreManageOpen} onClose={() => setGenreManageOpen(false)} tagsWithCount={tagsWithCount} />
-      {toast.node}
-    </Screen>
-  );
-}
-
-function GenreManageSheet({ visible, onClose, tagsWithCount }: any) {
-  const { genres, addGenre, updateGenre, deleteGenre, addTagsToGenre, mergeTags } = useData();
-  const toast = useToast();
-  const [newGenreName, setNewGenreName] = useState('');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [tagSearch, setTagSearch] = useState('');
-
-  const [editingGenreId, setEditingGenreId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editTags, setEditTags] = useState<string[]>([]);
-
-  const [detecting, setDetecting] = useState(false);
-  const [duplicateCandidates, setDuplicateCandidates] = useState<DuplicateTagGroup[]>([]);
-  const [approvedGroups, setApprovedGroups] = useState<Record<number, boolean>>({});
-
-  const filteredTags = useMemo(() => {
-    const kw = tagSearch.trim().toLowerCase();
-    if (!kw) return tagsWithCount;
-    return tagsWithCount.filter((t: any) => t.name.toLowerCase().includes(kw));
-  }, [tagsWithCount, tagSearch]);
-
-  const handleDetectDuplicates = async () => {
-    const allTagNames = tagsWithCount.map((t: any) => t.name);
-    if (allTagNames.length < 2) {
-      toast.show('分析に必要なタグが2つ以上ありません');
-      return;
-    }
-    setDetecting(true);
-    try {
-      const results = await detectDuplicateTags(allTagNames);
-      if (results.length === 0) {
-        toast.show('整理が必要な重複タグは見つかりませんでした');
-      } else {
-        setDuplicateCandidates(results);
-        const initialApproved: Record<number, boolean> = {};
-        results.forEach((_, idx) => { initialApproved[idx] = true; });
-        setApprovedGroups(initialApproved);
-        toast.show(`${results.length}件の整理候補を検出しました`);
-      }
-    } catch (e) {
-      toast.show('AI通信で一時的なエラーが発生しました。時間を置いて再試行してください');
-    } finally {
-      setDetecting(false);
-    }
-  };
-
-  const handleExecuteMerge = async () => {
-    for (let idx = 0; idx < duplicateCandidates.length; idx++) {
-      if (approvedGroups[idx]) {
-        const group = duplicateCandidates[idx];
-        await mergeTags(group.target, group.duplicates);
-      }
-    }
-    setDuplicateCandidates([]);
-    setApprovedGroups({});
-    toast.show('タグを統合しました');
-  };
-
-  const startEdit = (g: any) => {
-    setEditingGenreId(g.id);
-    setEditName(g.name);
-    setEditTags(g.tagNames || []);
-  };
-
-  const saveEdit = async () => {
-    if (!editingGenreId || !editName.trim()) return;
-    await updateGenre(editingGenreId, { name: editName.trim(), tagNames: editTags });
-    setEditingGenreId(null);
-  };
-
-  const toggleEditTag = (tagName: string) => {
-    setEditTags((prev) =>
-      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
-    );
-  };
-
-  const toggleTagSelect = (tagName: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
-    );
-  };
-
-  const handleCreateGenre = async () => {
-    if (!newGenreName.trim()) return;
-    await addGenre(newGenreName.trim(), selectedTags);
-    setNewGenreName('');
-    setSelectedTags([]);
-  };
-
-  const handleAssignToGenre = async (genreId: string) => {
-    if (selectedTags.length === 0) return;
-    await addTagsToGenre(genreId, selectedTags);
-    setSelectedTags([]);
-  };
-
-  return (
-    <Sheet visible={visible} onClose={() => { setEditingGenreId(null); setDuplicateCandidates([]); onClose(); }} title="🏷️ タグ・ジャンル管理">
-      <ScrollView style={{ maxHeight: 500 }}>
-        <View style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 16, borderWidth: 1, borderColor: C.primary }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <View>
-              <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>✨ AIタグ自動整理・クレンジング</Text>
-              <Text style={{ color: C.sub, fontSize: 10.5, marginTop: 2 }}>「オレンジ/みかん」など同義タグを検出してまとめます</Text>
-            </View>
-            <Pressable
-              onPress={handleDetectDuplicates}
-              disabled={detecting}
-              style={{ backgroundColor: C.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: R.pill }}
-            >
-              {detecting ? (
-                <ActivityIndicator size="small" color="#0B0A14" />
-              ) : (
-                <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 11.5 }}>検出実行</Text>
-              )}
-            </Pressable>
-          </View>
-
-          {duplicateCandidates.length > 0 && (
-            <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}>
-              <Text style={{ color: C.gold, fontSize: 12, fontWeight: '800', marginBottom: 8 }}>
-                以下のタググループを統合しますか？（チェックで許可）
-              </Text>
-
-              {duplicateCandidates.map((group, idx) => (
-                <Pressable
-                  key={idx}
-                  onPress={() => setApprovedGroups((prev) => ({ ...prev, [idx]: !prev[idx] }))}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    backgroundColor: approvedGroups[idx] ? C.primary + '22' : C.line + '44',
-                    padding: 8,
-                    borderRadius: R.sm,
-                    marginBottom: 6,
-                    borderWidth: 1,
-                    borderColor: approvedGroups[idx] ? C.primary : C.line,
-                  }}
-                >
-                  <Ionicons name={approvedGroups[idx] ? 'checkbox' : 'square-outline'} size={18} color={approvedGroups[idx] ? C.cyan : C.sub} />
-                  <View style={{ marginLeft: 8, flex: 1 }}>
-                    <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
-                      代表: <Text style={{ color: C.cyan }}>#{group.target}</Text>
-                    </Text>
-                    <Text style={{ color: C.sub, fontSize: 11 }}>
-                      統合対象: {group.duplicates.map((d) => `#${d}`).join(', ')}
-                    </Text>
-                  </View>
-                </Pressable>
-              ))}
-
-              <Btn label="選択したタグを統合実行" icon="checkmark" onPress={handleExecuteMerge} style={{ marginTop: 8 }} />
-            </View>
-          )}
-        </View>
-
-        {editingGenreId ? (
-          <View style={{ backgroundColor: C.card, padding: 14, borderRadius: R.md, marginBottom: 16, borderWidth: 1, borderColor: C.primary }}>
-            <Text style={{ color: C.primary, fontWeight: '900', fontSize: 14, marginBottom: 8 }}>✏️ ジャンルを編集</Text>
-            <Field label="ジャンル名" value={editName} onChangeText={setEditName} />
-
-            <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginTop: 10, marginBottom: 6 }}>
-              このジャンルのタグ（タップして除外）:
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-              {editTags.map((t) => (
-                <Pressable key={t} onPress={() => toggleEditTag(t)} style={{ backgroundColor: C.line, paddingHorizontal: 10, paddingVertical: 5, borderRadius: R.sm, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={{ color: C.cyan, fontSize: 12, fontWeight: '700' }}>#{t}</Text>
-                  <Ionicons name="close-circle" size={14} color={C.danger} />
-                </Pressable>
-              ))}
-              {editTags.length === 0 && <Text style={{ color: C.sub, fontSize: 12 }}>タグがありません</Text>}
-            </View>
-
-            <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 6 }}>タグの追加・削除（タップで切り替え）:</Text>
-            <SearchBar value={tagSearch} onChangeText={setTagSearch} placeholder="タグを絞り込み" />
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8, marginBottom: 16 }}>
-              {filteredTags.map((t: any) => {
-                const isIncluded = editTags.includes(t.name);
-                return (
-                  <Pressable
-                    key={t.name}
-                    onPress={() => toggleEditTag(t.name)}
-                    style={{
-                      backgroundColor: isIncluded ? C.primary : C.card,
-                      borderColor: isIncluded ? C.primary : C.line,
-                      borderWidth: 1,
-                      paddingHorizontal: 10,
-                      paddingVertical: 5,
-                      borderRadius: R.pill,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 4,
-                    }}
-                  >
-                    <Ionicons name={isIncluded ? 'checkbox' : 'square-outline'} size={14} color={isIncluded ? '#0B0A14' : C.sub} />
-                    <Text style={{ color: isIncluded ? '#0B0A14' : C.text, fontSize: 12, fontWeight: isIncluded ? '900' : '600' }}>#{t.name}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Btn label="保存" icon="checkmark" onPress={saveEdit} style={{ flex: 1 }} />
-              <Btn label="キャンセル" kind="danger" onPress={() => setEditingGenreId(null)} style={{ flex: 1 }} />
-            </View>
-          </View>
-        ) : (
-          <>
-            <View style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 16, borderWidth: 1, borderColor: C.line }}>
-              <Text style={{ color: C.text, fontWeight: '700', fontSize: 13, marginBottom: 8 }}>新ジャンルを作成</Text>
-              <Field label="" value={newGenreName} onChangeText={setNewGenreName} placeholder="ジャンル名（例: 経済学, 自己啓発）" />
-              <Btn label="作成（選択中のタグを含める）" icon="add" onPress={handleCreateGenre} style={{ marginTop: 8 }} />
-            </View>
-
-            {genres.length > 0 && (
-              <View style={{ marginBottom: 16 }}>
-                <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>登録済みジャンル（タップして編集）</Text>
-                {genres.map((g) => (
-                  <View key={g.id} style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 8, borderWidth: 1, borderColor: C.line }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Pressable onPress={() => startEdit(g)} style={{ flex: 1 }}>
-                        <Text style={{ color: C.text, fontWeight: '900', fontSize: 14 }}>📁 {g.name}</Text>
-                      </Pressable>
-                      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                        {selectedTags.length > 0 && (
-                          <Pressable onPress={() => handleAssignToGenre(g.id)} style={{ backgroundColor: C.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: R.sm }}>
-                            <Text style={{ color: '#0B0A14', fontSize: 11, fontWeight: '900' }}>+選択中の{selectedTags.length}件を追加</Text>
-                          </Pressable>
-                        )}
-                        <Pressable onPress={() => startEdit(g)} style={{ padding: 6, backgroundColor: C.line, borderRadius: R.sm }}>
-                          <Ionicons name="create-outline" size={16} color={C.text} />
-                        </Pressable>
-                        <Pressable onPress={() => deleteGenre(g.id)} style={{ padding: 6 }}>
-                          <Ionicons name="trash-outline" size={16} color={C.danger} />
-                        </Pressable>
-                      </View>
-                    </View>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                      {(g.tagNames || []).map((t) => (
-                        <Pressable key={t} onPress={() => startEdit(g)} style={{ backgroundColor: C.line, paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.sm }}>
-                          <Text style={{ color: C.cyan, fontSize: 11 }}>#{t}</Text>
-                        </Pressable>
-                      ))}
-                      {(g.tagNames || []).length === 0 && (
-                        <Pressable onPress={() => startEdit(g)}>
-                          <Text style={{ color: C.sub, fontSize: 11, fontStyle: 'italic' }}>タグ未登録（タップして追加）</Text>
-                        </Pressable>
-                      )}
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 6 }}>全タグ一覧（タップで一括追加の対象を選択）</Text>
-            <SearchBar value={tagSearch} onChangeText={setTagSearch} placeholder="タグを絞り込み検索" />
-
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 20 }}>
-              {filteredTags.map((t: any) => {
-                const isSelected = selectedTags.includes(t.name);
-                return (
-                  <Pressable
-                    key={t.name}
-                    onPress={() => toggleTagSelect(t.name)}
-                    style={{
-                      backgroundColor: isSelected ? C.primary : C.card,
-                      borderColor: isSelected ? C.primary : C.line,
-                      borderWidth: 1,
-                      paddingHorizontal: 10,
-                      paddingVertical: 6,
-                      borderRadius: R.pill,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 4,
-                    }}
-                  >
-                    <Ionicons name={isSelected ? 'checkbox' : 'square-outline'} size={14} color={isSelected ? '#0B0A14' : C.sub} />
-                    <Text style={{ color: isSelected ? '#0B0A14' : C.text, fontSize: 12, fontWeight: isSelected ? '900' : '600' }}>
-                      #{t.name} ({t.count})
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </>
-        )}
-      </ScrollView>
-    </Sheet>
   );
 }
 </file>
@@ -1010,202 +375,6 @@ function TemplateSheet({ visible, onClose, tpl }: any) {
         />
       )}
     </Sheet>
-  );
-}
-</file>
-
-<file path="src/app/(tabs)/review.tsx">
-// File: src/app/(tabs)/review.tsx
-import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { Btn, Card, Empty, Press, Screen, Title } from '../../components/ui';
-import MemoSheet from '../../components/MemoSheet';
-import { C, GRAD_HOT, GRAD_MAIN, R } from '../../lib/theme';
-import { useData } from '../../lib/store';
-import { EXTRA_BATCH, buildQueue, computeStreak, countToday, dueCount, retention } from '../../lib/srs';
-import { saveSettings, useSettings } from '../../lib/settings';
-
-const LABEL: any = { 1: '微妙', 2: '普通', 3: '最高' };
-
-export default function Review() {
-  const { memos, reviews, reviewMemo, updateMemo, loaded } = useData();
-  const settings = useSettings();
-  const [queue, setQueue] = useState<any[]>([]);
-  const [i, setI] = useState(0);
-  const [built, setBuilt] = useState(false);
-  const [revealed, setRevealed] = useState(false);
-  const [session, setSession] = useState(0);
-  const [memoOpen, setMemoOpen] = useState(false);
-
-  const done = countToday(reviews);
-  const streak = computeStreak(reviews);
-  const due = dueCount(memos);
-
-  useEffect(() => {
-    if (!loaded || built) return;
-    const remain = Math.max(0, settings.dailyLimit - done);
-    setQueue(buildQueue(memos, Date.now(), remain));
-    setBuilt(true);
-  }, [loaded, built, memos, settings.dailyLimit, done]);
-
-  const current = queue[i];
-
-  const rate = async (r: 1 | 2 | 3) => {
-    if (!current) return;
-    await reviewMemo(current, r);
-    setSession((n) => n + 1);
-    setRevealed(false);
-    setI((n) => n + 1);
-  };
-
-  const more = () => {
-    setQueue(buildQueue(memos, Date.now(), EXTRA_BATCH));
-    setI(0); setRevealed(false);
-  };
-
-  const header = (
-    <View>
-      <Title sub={`今日 ${done} 件 / 上限 ${settings.dailyLimit} 件・未処理 ${due} 件`}>復習</Title>
-      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginBottom: 16 }}>
-        <LinearGradient colors={GRAD_HOT} style={{ flex: 1, borderRadius: R.lg, padding: 14 }}>
-          <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 22 }}>🔥 {streak}</Text>
-          <Text style={{ color: '#0B0A1499', fontWeight: '800', fontSize: 11 }}>連続日数</Text>
-        </LinearGradient>
-        <View style={{ flex: 1, borderRadius: R.lg, padding: 14, backgroundColor: C.card, borderWidth: 1, borderColor: C.line }}>
-          <Text style={{ color: C.cyan, fontWeight: '900', fontSize: 22 }}>{session}</Text>
-          <Text style={{ color: C.sub, fontWeight: '800', fontSize: 11 }}>このセッション</Text>
-        </View>
-        <Pressable onPress={() => saveSettings({ recallMode: !settings.recallMode })}
-          style={{ width: 54, borderRadius: R.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: C.card, borderWidth: 1, borderColor: C.line }}>
-          <Ionicons name={settings.recallMode ? 'eye-off' : 'eye'} size={20} color={settings.recallMode ? C.danger : C.sub} />
-          <Text style={{ color: C.sub, fontSize: 9, marginTop: 3, fontWeight: '800' }}>想起</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-
-  if (!current) {
-    return (
-      <Screen>
-        <ScrollView>
-          {header}
-          <Empty
-            emoji={done > 0 ? '🎉' : '🌱'}
-            title={done > 0 ? `今日はここまで！ ${done}件クリア` : '今日の復習対象はありません'}
-            sub={due > 0 ? `未処理があと${due}件あります。無理に全部やらないのが継続のコツですが、いけるなら+${EXTRA_BATCH}枚。` : '新しいメモを追加すると、翌日から出題されます。'}
-          />
-          {due > 0 && <Btn label={`もう${EXTRA_BATCH}枚やる`} icon="flash" style={{ marginHorizontal: 40 }} onPress={more} />}
-        </ScrollView>
-      </Screen>
-    );
-  }
-
-  const r = Math.round(retention(current) * 100);
-  const show = revealed || !settings.recallMode;
-
-  const locationText = [
-    current.chapter ? `第${current.chapter}章` : null,
-    current.page ? `p.${current.page}` : null,
-  ].filter(Boolean).join(' ');
-
-  const progressPercent = Math.min(100, Math.max(0, Math.round((i / Math.max(1, queue.length)) * 100)));
-
-  return (
-    <Screen>
-      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
-        {header}
-        <View style={{ paddingHorizontal: 20 }}>
-          <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3, marginBottom: 16 }}>
-            <View style={{ height: 6, width: `${progressPercent}%` as any, backgroundColor: C.cyan, borderRadius: 3 }} />
-          </View>
-
-          <Card style={{ padding: 20, minHeight: 260, position: 'relative' }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={{ color: C.cyan, fontSize: 12, fontWeight: '900' }}>{current.bookTitle}</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 }}>
-                  {(current.tags || []).map((t: string) => (
-                    <Text key={t} style={{ color: C.sub, fontSize: 11.5, marginRight: 8 }}>#{t}</Text>
-                  ))}
-                </View>
-              </View>
-
-              <Pressable onPress={() => setMemoOpen(true)} hitSlop={10} style={{ padding: 6, backgroundColor: C.line, borderRadius: R.sm }}>
-                <Ionicons name="create-outline" size={18} color={C.text} />
-              </Pressable>
-            </View>
-
-            <View style={{ height: 14 }} />
-
-            {show ? (
-              <View>
-                <Text style={{ color: C.text, fontSize: 17, lineHeight: 27, fontWeight: '600' }}>{current.content}</Text>
-
-                {!!current.insight && (
-                  <View style={{ backgroundColor: C.primary + '22', padding: 10, borderRadius: R.sm, marginTop: 12 }}>
-                    <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>💡 {current.insight}</Text>
-                  </View>
-                )}
-
-                {!!current.actionPlan && (
-                  <View style={{ backgroundColor: C.gold + '22', padding: 10, borderRadius: R.sm, marginTop: 8 }}>
-                    <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>🎯 {current.actionPlan}</Text>
-                  </View>
-                )}
-              </View>
-            ) : (
-              <View style={{ alignItems: 'center', paddingVertical: 24 }}>
-                <Text style={{ fontSize: 40 }}>🤔</Text>
-                <Text style={{ color: C.sub, marginTop: 12, textAlign: 'center', lineHeight: 20 }}>
-                  この本のこのタグで、{'\n'}何を書いたか思い出せますか？
-                </Text>
-              </View>
-            )}
-
-            <View style={{ flex: 1, minHeight: 20 }} />
-
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
-              <Text style={{ color: r < 40 ? C.danger : C.sub, fontSize: 11, fontWeight: '800' }}>
-                推定記憶残存率 {r}%・{current.reps}回目
-              </Text>
-              {!!locationText && <Text style={{ color: C.sub, fontSize: 11 }}>{locationText}</Text>}
-            </View>
-          </Card>
-
-          {!show ? (
-            <Btn label="思い出した → 答えを見る" icon="eye" style={{ marginTop: 18 }} onPress={() => setRevealed(true)} />
-          ) : (
-            <View style={{ marginTop: 18 }}>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                {[1, 2, 3].map((n) => (
-                  <Press key={n} onPress={() => rate(n as 1 | 2 | 3)} style={{ flex: 1 }}>
-                    <LinearGradient
-                      colors={n === 3 ? GRAD_MAIN : n === 2 ? ['#4A4370', '#302B52'] : ['#5A2E48', '#3A1F33']}
-                      style={{ borderRadius: R.md, paddingVertical: 16, alignItems: 'center' }}
-                    >
-                      <Text style={{ fontSize: 18 }}>{'★'.repeat(n)}</Text>
-                      <Text style={{ color: n === 3 ? '#0B0A14' : C.text, fontWeight: '900', marginTop: 4, fontSize: 12.5 }}>{LABEL[n]}</Text>
-                    </LinearGradient>
-                  </Press>
-                ))}
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 }}>
-                <Pressable onPress={() => { setRevealed(false); setI(i + 1); }}>
-                  <Text style={{ color: C.sub, fontWeight: '800', padding: 6 }}>あとで（スキップ）</Text>
-                </Pressable>
-                <Pressable onPress={async () => { await updateMemo(current.id, { suspended: true }); setRevealed(false); setI(i + 1); }}>
-                  <Text style={{ color: C.sub, fontWeight: '800', padding: 6 }}>もう出さない</Text>
-                </Pressable>
-              </View>
-            </View>
-          )}
-        </View>
-      </ScrollView>
-
-      <MemoSheet visible={memoOpen} onClose={() => setMemoOpen(false)} memo={current} bookId={current?.bookId} />
-    </Screen>
   );
 }
 </file>
@@ -1673,76 +842,6 @@ export default function Login() {
 }
 </file>
 
-<file path="src/components/MemoCard.tsx">
-// File: src/components/MemoCard.tsx
-import React from 'react';
-import { Text, View } from 'react-native';
-import { Card, Stars } from './ui';
-import { C, R } from '../lib/theme';
-import { retention } from '../lib/srs';
-import type { Memo } from '../lib/types';
-
-export default function MemoCard({ memo, onPress, showBook }: any) {
-  const r = Math.round(retention(memo as Memo) * 100);
-
-  // 章とページ表示の組み合わせ
-  const locationText = [
-    memo.chapter ? `第${memo.chapter}章` : null,
-    memo.page ? `p.${memo.page}` : null,
-  ].filter(Boolean).join(' ');
-
-  return (
-    <Card onPress={onPress} style={{ marginBottom: 10 }}>
-      {showBook ? (
-        <Text numberOfLines={1} style={{ color: C.cyan, fontSize: 11, fontWeight: '800', marginBottom: 6 }}>
-          {memo.bookTitle || '（書籍不明）'}
-        </Text>
-      ) : null}
-
-      {/* メモ本文 */}
-      <Text style={{ color: C.text, fontSize: 14.5, lineHeight: 21 }} numberOfLines={8}>
-        {memo.content}
-      </Text>
-
-      {/* 💡 気付き表示 */}
-      {!!memo.insight && (
-        <View style={{ backgroundColor: C.primary + '22', padding: 8, borderRadius: R.sm, marginTop: 8 }}>
-          <Text style={{ color: C.text, fontSize: 12.5 }} numberOfLines={3}>
-            💡 {memo.insight}
-          </Text>
-        </View>
-      )}
-
-      {/* 🎯 アクションプラン表示 */}
-      {!!memo.actionPlan && (
-        <View style={{ backgroundColor: C.gold + '22', padding: 8, borderRadius: R.sm, marginTop: 6 }}>
-          <Text style={{ color: C.text, fontSize: 12.5 }} numberOfLines={3}>
-            🎯 {memo.actionPlan}
-          </Text>
-        </View>
-      )}
-
-      {/* タグ表示 */}
-      {!!(memo.tags || []).length && (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
-          {memo.tags.map((t: string) => (
-            <Text key={t} style={{ color: C.sub, fontSize: 11, marginRight: 8 }}>#{t}</Text>
-          ))}
-        </View>
-      )}
-
-      {/* フッター（評価・記憶率・章/ページ） */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
-        <Stars value={memo.rating} size={14} />
-        <Text style={{ color: r < 40 ? C.danger : C.sub, fontSize: 10.5, fontWeight: '700' }}>
-          記憶 {r}%{locationText ? ` ・ ${locationText}` : ''}
-        </Text>
-      </View>
-    </Card>
-  );
-}
-</file>
-
 <file path="src/components/MemoSheet.tsx">
 // File: src/components/MemoSheet.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -2115,115 +1214,6 @@ const s = StyleSheet.create({
   sheetTitle: { color: C.text, fontSize: 18, fontWeight: '900' },
   toast: { position: 'absolute', bottom: 96, alignSelf: 'center', backgroundColor: C.cyan, paddingHorizontal: 18, paddingVertical: 11, borderRadius: R.pill, left: 0, right: 0, marginHorizontal: 60, alignItems: 'center' },
 });
-</file>
-
-<file path="src/lib/aiTagging.ts">
-// File: src/lib/aiTagging.ts
-
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
-// 正しいAPIモデル識別子 (gemini-2.0-flash) に修正
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-
-export async function suggestTagsForMemo(
-  content: string,
-  existingTags: string[]
-): Promise<string[]> {
-  if (!content.trim()) return [];
-
-  const prompt = `
-あなたは書籍メモの整理アシスタントです。
-以下のメモ内容を分析し、最も適切なタグを2〜5個提案してください。
-
-【制約事項】
-1. 可能な限り「既存タグリスト」にあるタグを優先して使用してください。
-2. 既存タグで不足している場合のみ、適切で簡潔な「新規タグ」を追加してください。
-3. 出力は必ずJSONの文字列配列形式のみで返してください。余計な解説やMarkdown記飾（\`\`\`json等）は一切含めないでください。
-
-【既存タグリスト】
-${existingTags.length > 0 ? existingTags.join(', ') : '（なし）'}
-
-【メモ内容】
-${content}
-
-【出力例】
-["経済学", "マクロ経済", "市場原理"]
-`;
-
-  try {
-    const res = await fetch(GEMINI_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-      }),
-    });
-
-    if (!res.ok) throw new Error(`API Error: ${res.status}`);
-
-    const data = await res.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-    const cleanText = rawText.replace(/```json|```/g, '').trim();
-    const tags: string[] = JSON.parse(cleanText);
-    return Array.isArray(tags) ? tags : [];
-  } catch (e) {
-    console.error('AI Tag Suggestion Error:', e);
-    throw e;
-  }
-}
-
-export type DuplicateTagGroup = {
-  target: string;
-  duplicates: string[];
-};
-
-export async function detectDuplicateTags(allTags: string[]): Promise<DuplicateTagGroup[]> {
-  if (allTags.length < 2) return [];
-
-  const prompt = `
-あなたはデータクレンジングの専門家です。
-以下のタグ一覧から、実質的に同じ意味・人物・概念を表している「表記揺れ」「同義語」「カタカナ/英語表記」「略称/正式名称」のグループを検出してください。
-
-【例】
-- 「オレンジ」と「みかん」 ➔ 代表: "オレンジ", 重複: ["みかん"]
-- 「マリ・キュリー」と「キュリー夫人」 ➔ 代表: "キュリー夫人", 重複: ["マリ・キュリー"]
-- 「Python」と「パイソン」 ➔ 代表: "Python", 重複: ["パイソン"]
-
-【制約事項】
-1. 本当に意味が同一または極めて類似しているものだけを選んでください。少しでも意味が異なるものは含めないでください。
-2. 各グループは {"target": "代表タグ名", "duplicates": ["重複タグ1", "重複タグ2"]} のオブジェクト形式にしてください。
-3. 出力は必ずJSON配列形式のみで返してください。解説やMarkdown記飾は一切含めないでください。
-
-【全タグ一覧】
-${allTags.join(', ')}
-
-【出力例】
-[
-  { "target": "キュリー夫人", "duplicates": ["マリ・キュリー"] },
-  { "target": "Python", "duplicates": ["パイソン"] }
-]
-`;
-
-  try {
-    const res = await fetch(GEMINI_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-      }),
-    });
-
-    if (!res.ok) throw new Error(`API Error: ${res.status}`);
-
-    const data = await res.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-    const cleanText = rawText.replace(/```json|```/g, '').trim();
-    const result: DuplicateTagGroup[] = JSON.parse(cleanText);
-    return Array.isArray(result) ? result : [];
-  } catch (e) {
-    console.error('AI Duplicate Tag Detection Error:', e);
-    throw e;
-  }
-}
 </file>
 
 <file path="src/lib/booksApi.ts">
@@ -2890,164 +1880,6 @@ export function parseTags(input: string): string[] {
 export type { Rating };
 </file>
 
-<file path="src/lib/theme.ts">
-// File: src/lib/theme.ts
-
-export const C = {
-  bg: '#0B0A14',
-  card: '#1A182D',      // カード背景
-  line: '#322E50',      // 枠線
-  text: '#FFFFFF',      // メイン文字
-  sub: '#A1A1AA',       // サブ文字
-  primary: '#8B5CF6',
-  cyan: '#06B6D4',
-  danger: '#EF4444',
-  gold: '#F59E0B',      // 星評価用ゴールド
-};
-
-export const R = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  pill: 9999,           // 丸枠用
-};
-
-// グラデーション設定群（型を確定）
-export const GRAD_BG = ['#0B0A14', '#181528', '#0B0A14'] as const;
-export const GRAD_MAIN: [string, string] = ['#8B5CF6', '#06B6D4'];
-export const GRAD_HOT: [string, string] = ['#EF4444', '#F59E0B']; // ← 追加
-export const GRAD_CARD: [string, string] = ['#1A182D', '#151326'];
-
-// 読書ステータスの色とラベル
-export const STATUS_COLOR: Record<string, string> = {
-  unread: C.sub,
-  reading: C.primary,
-  done: C.cyan,
-};
-
-export const STATUS_LABEL: Record<string, string> = {
-  unread: '未読',
-  reading: '読書中',
-  done: '読了',
-};
-</file>
-
-<file path="src/lib/types.ts">
-// File: src/lib/types.ts
-export type Status = 'unread' | 'reading' | 'done';
-export type Rating = 0 | 1 | 2 | 3;
-
-export type Book = {
-  id: string;
-  title: string;
-  author: string;
-  coverUrl: string | null;
-  status: Status;
-  tags: string[];
-  order: number;
-  deletedAt: number | null;
-  createdAt: number;
-  updatedAt: number;
-};
-
-// File: src/lib/types.ts
-
-export type Memo = {
-  id: string;
-  bookId: string;
-  bookTitle: string;
-  content: string;
-  page: string | null;
-  chapter: string | null;
-  insight: string | null;      // ← これを追加（気付き）
-  actionPlan: string | null;   // ← これを追加（アクションプラン）
-  tags: string[];
-  rating: Rating;
-  order: number;
-  dueAt: number;
-  intervalDays: number;
-  reps: number;
-  lapses: number;
-  lastReviewedAt: number | null;
-  suspended: boolean;
-  deletedAt: number | null;
-  createdAt: number;
-  updatedAt: number;
-};
-
-export type Template = {
-  id: string;
-  name: string;
-  body: string;
-  usageCount: number;
-  createdAt: number;
-  updatedAt: number;
-};
-
-export type ReviewLog = {
-  id: string;
-  memoId: string;
-  rating: 1 | 2 | 3;
-  reviewedAt: number;
-  intervalBefore: number;
-  intervalAfter: number;
-};
-
-// File: src/lib/types.ts 内の一番下に追加
-
-export type Genre = {
-  id: string;
-  name: string;
-  tagNames: string[];  // このジャンルに含まれるタグ名の配列
-  createdAt: number;
-  updatedAt: number;
-};
-</file>
-
-<file path=".gitignore">
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
-node_modules/
-
-# Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
-
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
-*.pem
-
-# local env files
-.env*.local
-
-# typescript
-*.tsbuildinfo
-
-# generated native folders
-/ios
-/android
-</file>
-
 <file path="AGENTS.md">
 # Expo HAS CHANGED
 
@@ -3121,6 +1953,802 @@ config.resolver.unstable_conditionNames = ['browser', 'require', 'react-native']
 module.exports = config;
 </file>
 
+<file path="tsconfig.json">
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true
+  }
+}
+</file>
+
+<file path="vercel.json">
+{
+  "buildCommand": "npx expo export -p web",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+</file>
+
+<file path="src/app/(tabs)/index.tsx">
+// File: src/app/(tabs)/index.tsx
+import React, { useMemo, useState } from 'react';
+import { FlatList, Image, Pressable, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { Btn, Chip, Field, Press, Screen, SearchBar, Sheet, Title, Empty, useToast } from '../../components/ui';
+import { C, GRAD_MAIN, R, STATUS_COLOR, STATUS_LABEL } from '../../lib/theme';
+import { parseTags, uniqueTags, useData } from '../../lib/store';
+import { dueCount } from '../../lib/srs';
+import { fetchByIsbn, searchByTitle } from '../../lib/booksApi';
+import { cloudinaryReady, uploadImage } from '../../lib/cloudinary';
+
+export default function BookShelf() {
+  const { books, memos, addBook, updateBook } = useData();
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const [status, setStatus] = useState('all');
+  const [tag, setTag] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const alive = books.filter((b) => !b.deletedAt);
+  const tags = uniqueTags(alive);
+
+  const list = useMemo(() => {
+    const kw = q.trim().toLowerCase();
+    return alive
+      .filter((b) => (status === 'all' ? true : b.status === status))
+      .filter((b) => (tag ? (b.tags || []).includes(tag) : true))
+      .filter((b) => (kw ? (b.title + b.author + (b.wishReason || '')).toLowerCase().includes(kw) : true))
+      .sort((a, b) => {
+        // 読みたい本の場合は優先度が高い順
+        if (a.status === 'wish' && b.status === 'wish') {
+          return (b.priority || 0) - (a.priority || 0);
+        }
+        return (a.order || 0) - (b.order || 0);
+      });
+  }, [alive, q, status, tag]);
+
+  const countOf = (id: string) => memos.filter((m) => m.bookId === id && !m.deletedAt).length;
+  const due = dueCount(memos);
+
+  return (
+    <Screen>
+      <FlatList
+        data={list}
+        keyExtractor={(b) => b.id}
+        numColumns={2}
+        columnWrapperStyle={{ paddingHorizontal: 14, gap: 12 }}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        ListHeaderComponent={
+          <View>
+            <Title
+              sub={`${alive.length}冊 / メモ${memos.filter((m) => !m.deletedAt).length}件`}
+              right={
+                <Pressable onPress={() => router.push('/settings')} hitSlop={10}>
+                  <Ionicons name="settings-outline" size={22} color={C.sub} />
+                </Pressable>
+              }
+            >
+              My Library
+            </Title>
+
+            {due > 0 && (
+              <Press onPress={() => router.push('/review')} style={{ marginHorizontal: 20, marginBottom: 14 }}>
+                <LinearGradient
+                  colors={GRAD_MAIN}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{ borderRadius: R.lg, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                >
+                  <Text style={{ fontSize: 24 }}>⚡</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 15 }}>今日の復習が {due} 件</Text>
+                    <Text style={{ color: '#0B0A1499', fontSize: 11.5, fontWeight: '700' }}>忘れかけの今がいちばん効く</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#0B0A14" />
+                </LinearGradient>
+              </Press>
+            )}
+
+            <SearchBar value={q} onChangeText={setQ} placeholder="タイトル・著者・読む目的で検索" />
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 }}>
+              {['all', 'wish', 'unread', 'reading', 'done'].map((s) => (
+                <Chip
+                  key={s}
+                  label={s === 'all' ? 'すべて' : STATUS_LABEL[s]}
+                  active={status === s}
+                  color={s === 'all' ? C.primary : STATUS_COLOR[s]}
+                  onPress={() => setStatus(s)}
+                />
+              ))}
+            </View>
+
+            {!!tags.length && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, marginTop: 2 }}>
+                {tags.map((t) => (
+                  <Chip
+                    key={t}
+                    label={'#' + t}
+                    active={tag === t}
+                    color={C.cyan}
+                    onPress={() => setTag(tag === t ? '' : t)}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
+        }
+        ListEmptyComponent={<Empty emoji="📖" title="該当する本がありません" sub="右下の＋から「読みたい本」や「購入した本」を追加してみましょう。" />}
+        renderItem={({ item }) => (
+          <Press onPress={() => router.push(`/book/${item.id}`)} style={{ flex: 1, marginBottom: 12 }}>
+            <View style={{ borderRadius: R.lg, overflow: 'hidden', backgroundColor: C.card, borderWidth: 1, borderColor: C.line }}>
+              {item.coverUrl ? (
+                <Image source={{ uri: item.coverUrl }} style={{ width: '100%', height: 190 }} resizeMode="cover" />
+              ) : (
+                <LinearGradient colors={['#3A2E7A', '#16143A']} style={{ height: 190, alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+                  <Text style={{ fontSize: 30 }}>{item.status === 'wish' ? '💡' : '📗'}</Text>
+                  <Text numberOfLines={3} style={{ color: C.text, fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 8 }}>{item.title}</Text>
+                </LinearGradient>
+              )}
+              <View style={{ padding: 12 }}>
+                <Text numberOfLines={2} style={{ color: C.text, fontWeight: '800', fontSize: 13.5, lineHeight: 19 }}>{item.title}</Text>
+                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 11, marginTop: 3 }}>{item.author || '著者未設定'}</Text>
+
+                {/* 読む目的・きっかけメモ表示 */}
+                {!!item.wishReason && (
+                  <View style={{ backgroundColor: C.gold + '22', padding: 6, borderRadius: R.sm, marginTop: 6 }}>
+                    <Text numberOfLines={2} style={{ color: C.gold, fontSize: 10.5, fontWeight: '700' }}>
+                      💬 {item.wishReason}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 9 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ color: STATUS_COLOR[item.status], fontSize: 10.5, fontWeight: '900' }}>
+                      {STATUS_LABEL[item.status]}
+                    </Text>
+                    {item.status === 'wish' && !!item.priority && item.priority > 0 && (
+                      <Text style={{ color: C.gold, fontSize: 10, fontWeight: '900' }}>
+                        {'★'.repeat(item.priority)}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={{ color: C.sub, fontSize: 10.5, fontWeight: '700' }}>📝 {countOf(item.id)}</Text>
+                </View>
+
+                {/* ワンタップ昇格ボタン（読みたい ➔ 読書中） */}
+                {item.status === 'wish' && (
+                  <Pressable
+                    onPress={async (e) => {
+                      e.stopPropagation();
+                      await updateBook(item.id, { status: 'reading' });
+                      toast.show('「読書中」に変更しました！');
+                    }}
+                    style={{
+                      backgroundColor: C.primary,
+                      paddingVertical: 6,
+                      borderRadius: R.pill,
+                      alignItems: 'center',
+                      marginTop: 8,
+                    }}
+                  >
+                    <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 11 }}>📖 読書を開始する</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          </Press>
+        )}
+      />
+
+      <Press onPress={() => setOpen(true)} style={{ position: 'absolute', right: 20, bottom: 20 }}>
+        <LinearGradient colors={GRAD_MAIN} style={{ width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="add" size={30} color="#0B0A14" />
+        </LinearGradient>
+      </Press>
+
+      <AddBookSheet visible={open} onClose={() => setOpen(false)} onDone={(msg: string) => toast.show(msg)} addBook={addBook} />
+      {toast.node}
+    </Screen>
+  );
+}
+
+function AddBookSheet({ visible, onClose, onDone, addBook }: any) {
+  const [title, setTitle] = useState('');
+  const [author, setAuthor] = useState('');
+  const [isbn, setIsbn] = useState('');
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [tags, setTags] = useState('');
+  const [status, setStatus] = useState('wish');
+  const [wishReason, setWishReason] = useState('');
+  const [priority, setPriority] = useState(2);
+  const [cands, setCands] = useState<any[]>([]);
+  const [busy, setBusy] = useState('');
+
+  const reset = () => {
+    setTitle('');
+    setAuthor('');
+    setIsbn('');
+    setCoverUrl(null);
+    setTags('');
+    setStatus('wish');
+    setWishReason('');
+    setPriority(2);
+    setCands([]);
+  };
+
+  const auto = async () => {
+    setBusy('検索中…');
+    if (isbn.trim()) {
+      const r = await fetchByIsbn(isbn);
+      if (r) { setTitle(r.title); setAuthor(r.author); setCoverUrl(r.coverUrl); setBusy(''); return; }
+    }
+    const list = await searchByTitle(title || isbn);
+    setCands(list);
+    setBusy(list.length ? '' : '見つかりませんでした（手入力してください）');
+  };
+
+  const pick = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (res.canceled) return;
+    setBusy('アップロード中…');
+    try { setCoverUrl(await uploadImage(res.assets[0].uri)); setBusy(''); }
+    catch (e: any) { setBusy('失敗：' + e.message); }
+  };
+
+  return (
+    <Sheet visible={visible} onClose={onClose} title="本を追加">
+      <Field label="ISBN（13桁・任意）" value={isbn} onChangeText={setIsbn} placeholder="9784…" />
+      <Field label="タイトル" value={title} onChangeText={setTitle} placeholder="サピエンス全史" />
+      <Field label="著者" value={author} onChangeText={setAuthor} placeholder="ユヴァル・ノア・ハラリ" />
+      <Btn label="ISBN/書名から自動取得" kind="ghost" icon="cloud-download-outline" onPress={auto} />
+      {!!busy && <Text style={{ color: C.sub, fontSize: 12, marginTop: 8 }}>{busy}</Text>}
+
+      {!!cands.length && (
+        <View style={{ marginTop: 12 }}>
+          <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>候補をタップして反映</Text>
+          {cands.map((c, i) => (
+            <Pressable key={i} onPress={() => { setTitle(c.title); setAuthor(c.author); setCoverUrl(c.coverUrl); setCands([]); }}
+              style={{ flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 8 }}>
+              {c.coverUrl ? <Image source={{ uri: c.coverUrl }} style={{ width: 34, height: 48, borderRadius: 4 }} /> : <Text>📕</Text>}
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={1} style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>{c.title}</Text>
+                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 11 }}>{c.author}</Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
+      {!!coverUrl && (
+        <View style={{ alignItems: 'center', marginVertical: 12 }}>
+          <Image source={{ uri: coverUrl }} style={{ width: 88, height: 124, borderRadius: 8 }} />
+        </View>
+      )}
+
+      {cloudinaryReady && (
+        <Btn label="端末から表紙をアップロード" kind="ghost" icon="image-outline" style={{ marginTop: 10 }} onPress={pick} />
+      )}
+
+      <View style={{ height: 14 }} />
+      <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>ステータス</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {['wish', 'unread', 'reading', 'done'].map((s) => (
+          <Chip key={s} label={STATUS_LABEL[s]} active={status === s} color={STATUS_COLOR[s]} onPress={() => setStatus(s)} />
+        ))}
+      </View>
+
+      {/* 読みたい場合専用：目的・理由メモ ＆ 優先度 */}
+      {status === 'wish' && (
+        <View style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginVertical: 10, borderWidth: 1, borderColor: C.gold }}>
+          <Field
+            label="💡 読む目的・きっかけ（任意）"
+            value={wishReason}
+            onChangeText={setWishReason}
+            placeholder="例: 〇〇さんのPodcastで紹介 / 思考整理のため"
+          />
+          <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 6 }}>優先度</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {[
+              { level: 1, label: '★ 低' },
+              { level: 2, label: '★★ 中' },
+              { level: 3, label: '★★★ 高 (TOP3)' },
+            ].map((p) => (
+              <Chip
+                key={p.level}
+                label={p.label}
+                active={priority === p.level}
+                color={C.gold}
+                onPress={() => setPriority(p.level)}
+              />
+            ))}
+          </View>
+        </View>
+      )}
+
+      <Field label="タグ（スペース区切り）" value={tags} onChangeText={setTags} placeholder="投資 心理学" />
+      <Btn
+        label="本棚に追加"
+        icon="add"
+        onPress={async () => {
+          if (!title.trim()) return;
+          await addBook({
+            title: title.trim(),
+            author: author.trim(),
+            coverUrl,
+            status: status as any,
+            wishReason: status === 'wish' ? wishReason.trim() : null,
+            priority: status === 'wish' ? priority : 0,
+            tags: parseTags(tags),
+          });
+          reset();
+          onClose();
+          onDone('本棚に追加しました');
+        }}
+      />
+    </Sheet>
+  );
+}
+</file>
+
+<file path="src/app/(tabs)/review.tsx">
+// File: src/app/(tabs)/review.tsx
+import React, { useEffect, useState } from 'react';
+import { Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { Btn, Card, Empty, Press, Screen, Title } from '../../components/ui';
+import MemoSheet from '../../components/MemoSheet';
+import { C, GRAD_HOT, GRAD_MAIN, R } from '../../lib/theme';
+import { useData } from '../../lib/store';
+import { EXTRA_BATCH, buildQueue, computeStreak, countToday, dueCount, retention } from '../../lib/srs';
+import { saveSettings, useSettings } from '../../lib/settings';
+
+const LABEL: any = { 1: '微妙', 2: '普通', 3: '最高' };
+
+export default function Review() {
+  const { memos, reviews, reviewMemo, updateMemo, loaded } = useData();
+  const settings = useSettings();
+  const [queue, setQueue] = useState<any[]>([]);
+  const [i, setI] = useState(0);
+  const [built, setBuilt] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  const [session, setSession] = useState(0);
+  const [memoOpen, setMemoOpen] = useState(false);
+
+  const done = countToday(reviews);
+  const streak = computeStreak(reviews);
+  const due = dueCount(memos);
+
+  useEffect(() => {
+    if (!loaded || built) return;
+    const remain = Math.max(0, settings.dailyLimit - done);
+    setQueue(buildQueue(memos, Date.now(), remain));
+    setBuilt(true);
+  }, [loaded, built, memos, settings.dailyLimit, done]);
+
+  const current = queue[i];
+
+  const rate = async (r: 1 | 2 | 3) => {
+    if (!current) return;
+    await reviewMemo(current, r);
+    setSession((n) => n + 1);
+    setRevealed(false);
+    setI((n) => n + 1);
+  };
+
+  const more = () => {
+    setQueue(buildQueue(memos, Date.now(), EXTRA_BATCH));
+    setI(0); setRevealed(false);
+  };
+
+  const header = (
+    <View>
+      <Title sub={`今日 ${done} 件 / 上限 ${settings.dailyLimit} 件・未処理 ${due} 件`}>復習</Title>
+      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginBottom: 16 }}>
+        <LinearGradient colors={GRAD_HOT} style={{ flex: 1, borderRadius: R.lg, padding: 14 }}>
+          <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 22 }}>🔥 {streak}</Text>
+          <Text style={{ color: '#0B0A1499', fontWeight: '800', fontSize: 11 }}>連続日数</Text>
+        </LinearGradient>
+        <View style={{ flex: 1, borderRadius: R.lg, padding: 14, backgroundColor: C.card, borderWidth: 1, borderColor: C.line }}>
+          <Text style={{ color: C.cyan, fontWeight: '900', fontSize: 22 }}>{session}</Text>
+          <Text style={{ color: C.sub, fontWeight: '800', fontSize: 11 }}>このセッション</Text>
+        </View>
+        <Pressable onPress={() => saveSettings({ recallMode: !settings.recallMode })}
+          style={{ width: 54, borderRadius: R.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: C.card, borderWidth: 1, borderColor: C.line }}>
+          <Ionicons name={settings.recallMode ? 'eye-off' : 'eye'} size={20} color={settings.recallMode ? C.danger : C.sub} />
+          <Text style={{ color: C.sub, fontSize: 9, marginTop: 3, fontWeight: '800' }}>想起</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  if (!current) {
+    return (
+      <Screen>
+        <ScrollView>
+          {header}
+          <Empty
+            emoji={done > 0 ? '🎉' : '🌱'}
+            title={done > 0 ? `今日はここまで！ ${done}件クリア` : '今日の復習対象はありません'}
+            sub={due > 0 ? `未処理があと${due}件あります。無理に全部やらないのが継続のコツですが、いけるなら+${EXTRA_BATCH}枚。` : '新しいメモを追加すると、翌日から出題されます。'}
+          />
+          {due > 0 && <Btn label={`もう${EXTRA_BATCH}枚やる`} icon="flash" style={{ marginHorizontal: 40 }} onPress={more} />}
+        </ScrollView>
+      </Screen>
+    );
+  }
+
+  const r = Math.round(retention(current) * 100);
+  const show = revealed || !settings.recallMode;
+
+  const locationText = [
+    current.chapter ? `第${current.chapter}章` : null,
+    current.page ? `p.${current.page}` : null,
+  ].filter(Boolean).join(' ');
+
+  const progressPercent = Math.min(100, Math.max(0, Math.round((i / Math.max(1, queue.length)) * 100)));
+
+  return (
+    <Screen>
+      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+        {header}
+        <View style={{ paddingHorizontal: 20 }}>
+          <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3, marginBottom: 16 }}>
+            <View style={{ height: 6, width: `${progressPercent}%` as any, backgroundColor: C.cyan, borderRadius: 3 }} />
+          </View>
+
+          <Card style={{ padding: 20, minHeight: 260, position: 'relative' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={{ color: C.cyan, fontSize: 12, fontWeight: '900' }}>{current.bookTitle}</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 }}>
+                  {(current.tags || []).map((t: string) => (
+                    <Text key={t} style={{ color: C.sub, fontSize: 11.5, marginRight: 8 }}>#{t}</Text>
+                  ))}
+                </View>
+              </View>
+
+              <Pressable onPress={() => setMemoOpen(true)} hitSlop={10} style={{ padding: 6, backgroundColor: C.line, borderRadius: R.sm }}>
+                <Ionicons name="create-outline" size={18} color={C.text} />
+              </Pressable>
+            </View>
+
+            <View style={{ height: 14 }} />
+
+            {show ? (
+              <View>
+                <Text style={{ color: C.text, fontSize: 17, lineHeight: 27, fontWeight: '600' }}>{current.content}</Text>
+
+                {!!current.insight && (
+                  <View style={{ backgroundColor: C.primary + '22', padding: 10, borderRadius: R.sm, marginTop: 12 }}>
+                    <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>💡 {current.insight}</Text>
+                  </View>
+                )}
+
+                {!!current.actionPlan && (
+                  <View style={{ backgroundColor: C.gold + '22', padding: 10, borderRadius: R.sm, marginTop: 8 }}>
+                    <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>🎯 {current.actionPlan}</Text>
+                  </View>
+                )}
+
+                {/* 🌸 ギャルの一言コメント表示（復習カード内） */}
+                {!!current.gyaruComment && (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#FF149318',
+                      padding: 10,
+                      borderRadius: R.md,
+                      marginTop: 10,
+                      borderWidth: 1,
+                      borderColor: '#FF69B466',
+                    }}
+                  >
+                    <Image
+                      source={require('../../../assets/gyaru.png')}
+                      style={{ width: 42, height: 42, borderRadius: 21, marginRight: 10 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#FF69B4', fontSize: 10.5, fontWeight: '900' }}>ギャルの本質一言</Text>
+                      <Text style={{ color: C.text, fontSize: 12.5, fontWeight: '700', marginTop: 2, lineHeight: 18 }}>
+                        {current.gyaruComment}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                <Text style={{ fontSize: 40 }}>🤔</Text>
+                <Text style={{ color: C.sub, marginTop: 12, textAlign: 'center', lineHeight: 20 }}>
+                  この本のこのタグで、{'\n'}何を書いたか思い出せますか？
+                </Text>
+              </View>
+            )}
+
+            <View style={{ flex: 1, minHeight: 20 }} />
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+              <Text style={{ color: r < 40 ? C.danger : C.sub, fontSize: 11, fontWeight: '800' }}>
+                推定記憶残存率 {r}%・{current.reps}回目
+              </Text>
+              {!!locationText && <Text style={{ color: C.sub, fontSize: 11 }}>{locationText}</Text>}
+            </View>
+          </Card>
+
+          {!show ? (
+            <Btn label="思い出した → 答えを見る" icon="eye" style={{ marginTop: 18 }} onPress={() => setRevealed(true)} />
+          ) : (
+            <View style={{ marginTop: 18 }}>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                {[1, 2, 3].map((n) => (
+                  <Press key={n} onPress={() => rate(n as 1 | 2 | 3)} style={{ flex: 1 }}>
+                    <LinearGradient
+                      colors={n === 3 ? GRAD_MAIN : n === 2 ? ['#4A4370', '#302B52'] : ['#5A2E48', '#3A1F33']}
+                      style={{ borderRadius: R.md, paddingVertical: 16, alignItems: 'center' }}
+                    >
+                      <Text style={{ fontSize: 18 }}>{'★'.repeat(n)}</Text>
+                      <Text style={{ color: n === 3 ? '#0B0A14' : C.text, fontWeight: '900', marginTop: 4, fontSize: 12.5 }}>{LABEL[n]}</Text>
+                    </LinearGradient>
+                  </Press>
+                ))}
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 }}>
+                <Pressable onPress={() => { setRevealed(false); setI(i + 1); }}>
+                  <Text style={{ color: C.sub, fontWeight: '800', padding: 6 }}>あとで（スキップ）</Text>
+                </Pressable>
+                <Pressable onPress={async () => { await updateMemo(current.id, { suspended: true }); setRevealed(false); setI(i + 1); }}>
+                  <Text style={{ color: C.sub, fontWeight: '800', padding: 6 }}>もう出さない</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      <MemoSheet visible={memoOpen} onClose={() => setMemoOpen(false)} memo={current} bookId={current?.bookId} />
+    </Screen>
+  );
+}
+</file>
+
+<file path="src/components/MemoCard.tsx">
+// File: src/components/MemoCard.tsx
+import React, { useState } from 'react';
+import { ActivityIndicator, Image, Pressable, Text, View } from 'react-native';
+import { Card, Stars } from './ui';
+import { C, R } from '../lib/theme';
+import { retention } from '../lib/srs';
+import { useData } from '../lib/store';
+import { generateGyaruComment } from '../lib/aiTagging';
+import type { Memo } from '../lib/types';
+
+export default function MemoCard({ memo, onPress, showBook }: any) {
+  const { updateMemo } = useData();
+  const [loading, setLoading] = useState(false);
+  const r = Math.round(retention(memo as Memo) * 100);
+
+  const locationText = [
+    memo.chapter ? `第${memo.chapter}章` : null,
+    memo.page ? `p.${memo.page}` : null,
+  ].filter(Boolean).join(' ');
+
+  const handleGenerateGyaru = async () => {
+    if (!memo.content || loading) return;
+    setLoading(true);
+    try {
+      const comment = await generateGyaruComment(memo.content);
+      if (comment) {
+        await updateMemo(memo.id, { gyaruComment: comment });
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card onPress={onPress} style={{ marginBottom: 10 }}>
+      {showBook ? (
+        <Text numberOfLines={1} style={{ color: C.cyan, fontSize: 11, fontWeight: '800', marginBottom: 6 }}>
+          {memo.bookTitle || '（書籍不明）'}
+        </Text>
+      ) : null}
+
+      <Text style={{ color: C.text, fontSize: 14.5, lineHeight: 21 }} numberOfLines={8}>
+        {memo.content}
+      </Text>
+
+      {!!memo.insight && (
+        <View style={{ backgroundColor: C.primary + '22', padding: 8, borderRadius: R.sm, marginTop: 8 }}>
+          <Text style={{ color: C.text, fontSize: 12.5 }} numberOfLines={3}>
+            💡 {memo.insight}
+          </Text>
+        </View>
+      )}
+
+      {!!memo.actionPlan && (
+        <View style={{ backgroundColor: C.gold + '22', padding: 8, borderRadius: R.sm, marginTop: 6 }}>
+          <Text style={{ color: C.text, fontSize: 12.5 }} numberOfLines={3}>
+            🎯 {memo.actionPlan}
+          </Text>
+        </View>
+      )}
+
+      {/* 🌸 ギャルの一言表示 */}
+      {memo.gyaruComment ? (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: '#FF149318',
+            padding: 8,
+            borderRadius: R.md,
+            marginTop: 8,
+            borderWidth: 1,
+            borderColor: '#FF69B466',
+          }}
+        >
+          <Image
+            source={require('../../assets/gyaru.png')}
+            style={{ width: 38, height: 38, borderRadius: 19, marginRight: 8 }}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#FF69B4', fontSize: 10, fontWeight: '900' }}>ギャルの一言</Text>
+            <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 1 }}>
+              {memo.gyaruComment}
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <Pressable
+          onPress={handleGenerateGyaru}
+          disabled={loading}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            alignSelf: 'flex-start',
+            gap: 4,
+            backgroundColor: '#FF69B422',
+            borderColor: '#FF69B4',
+            borderWidth: 1,
+            paddingHorizontal: 8,
+            paddingVertical: 3,
+            borderRadius: R.pill,
+            marginTop: 8,
+          }}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#FF69B4" />
+          ) : (
+            <>
+              <Text style={{ fontSize: 10 }}>💖</Text>
+              <Text style={{ color: '#FF69B4', fontSize: 10.5, fontWeight: '800' }}>ギャルの一言を追加</Text>
+            </>
+          )}
+        </Pressable>
+      )}
+
+      {!!(memo.tags || []).length && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
+          {memo.tags.map((t: string) => (
+            <Text key={t} style={{ color: C.sub, fontSize: 11, marginRight: 8 }}>#{t}</Text>
+          ))}
+        </View>
+      )}
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+        <Stars value={memo.rating} size={14} />
+        <Text style={{ color: r < 40 ? C.danger : C.sub, fontSize: 10.5, fontWeight: '700' }}>
+          記憶 {r}%{locationText ? ` ・ ${locationText}` : ''}
+        </Text>
+      </View>
+    </Card>
+  );
+}
+</file>
+
+<file path="src/lib/theme.ts">
+// File: src/lib/theme.ts
+
+export const C = {
+  bg: '#0B0A14',
+  card: '#1A182D',
+  line: '#322E50',
+  text: '#FFFFFF',
+  sub: '#A1A1AA',
+  primary: '#8B5CF6',
+  cyan: '#06B6D4',
+  danger: '#EF4444',
+  gold: '#F59E0B',
+};
+
+export const R = {
+  sm: 8,
+  md: 12,
+  lg: 16,
+  pill: 9999,
+};
+
+export const GRAD_BG = ['#0B0A14', '#181528', '#0B0A14'] as const;
+export const GRAD_MAIN: [string, string] = ['#8B5CF6', '#06B6D4'];
+export const GRAD_HOT: [string, string] = ['#EF4444', '#F59E0B'];
+export const GRAD_CARD: [string, string] = ['#1A182D', '#151326'];
+
+export const STATUS_COLOR: Record<string, string> = {
+  wish: C.gold,
+  unread: C.sub,
+  reading: C.primary,
+  done: C.cyan,
+};
+
+export const STATUS_LABEL: Record<string, string> = {
+  wish: '読みたい',
+  unread: '未読',
+  reading: '読書中',
+  done: '読了',
+};
+</file>
+
+<file path=".gitignore">
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+.env
+</file>
+
 <file path="package.json">
 {
   "name": "reading-brain",
@@ -3155,30 +2783,763 @@ module.exports = config;
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:web": "expo export -p web"
   },
   "private": true
 }
 </file>
 
-<file path="repomix実行.bat">
-@echo off
-cd /d "%~dp0"
-npx repomix
-pause
-</file>
+<file path="src/lib/aiTagging.ts">
+// File: src/lib/aiTagging.ts
 
-<file path="tsconfig.json">
-{
-  "extends": "expo/tsconfig.base",
-  "compilerOptions": {
-    "strict": true
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+
+const MODEL_CANDIDATES = [
+  'gemini-3.6-flash',
+  'gemini-2.5-flash',
+  'gemini-flash-latest',
+];
+
+async function fetchGeminiWithFallback(prompt: string): Promise<string> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('Gemini API Key (.env) が設定されていません');
+  }
+
+  let lastError: Error | null = null;
+
+  for (const model of MODEL_CANDIDATES) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const fullText = parts
+          .map((p: any) => p.text || '')
+          .filter(Boolean)
+          .join('\n');
+
+        if (fullText) return fullText;
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        lastError = new Error(`API Error ${res.status}`);
+      }
+    } catch (e: any) {
+      lastError = e;
+    }
+  }
+
+  throw lastError || new Error('すべてのGeminiモデル呼び出しに失敗しました');
+}
+
+function extractJsonArray(rawText: string): any[] {
+  try {
+    const clean = rawText.replace(/```json|```/g, '').trim();
+    const match = clean.match(/\[[\s\S]*\]/);
+    if (match) return JSON.parse(match[0]);
+    return JSON.parse(clean);
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function suggestTagsForMemo(
+  content: string,
+  existingTags: string[]
+): Promise<string[]> {
+  if (!content.trim()) return [];
+
+  const prompt = `
+あなたは書籍メモの整理アシスタントです。
+以下のメモ内容を分析し、最も適切なタグを2〜5個提案してください。
+
+【制約事項】
+1. 可能な限り「既存タグリスト」にあるタグを優先して使用してください。
+2. 既存タグで不足している場合のみ、適切で簡潔な「新規タグ」を追加してください。
+3. 出力は必ずJSONの文字列配列形式のみで返してください。余計な解説やMarkdown記飾は一切含めないでください。
+
+【既存タグリスト】
+${existingTags.length > 0 ? existingTags.join(', ') : '（なし）'}
+
+【メモ内容】
+${content}
+
+【出力例】
+["経済学", "マクロ経済", "市場原理"]
+`;
+
+  try {
+    const rawText = await fetchGeminiWithFallback(prompt);
+    const result = extractJsonArray(rawText);
+    return Array.isArray(result) ? result : [];
+  } catch (e) {
+    throw e;
+  }
+}
+
+export type DuplicateTagGroup = {
+  target: string;
+  duplicates: string[];
+};
+
+export async function detectDuplicateTags(allTags: string[]): Promise<DuplicateTagGroup[]> {
+  if (allTags.length < 2) return [];
+
+  const prompt = `
+あなたはデータクレンジングの専門家です。
+以下のタグ一覧から、実質的に同じ意味・人物・概念を表している「表記揺れ」「同義語」「カタカナ/英語表記」「略称/正式名称」のグループを検出してください。
+
+【制約事項】
+1. 本当に意味が同一または極めて類似しているものだけを選んでください。少しでも意味が異なるものは含めないでください。
+2. 各グループは {"target": "代表タグ名", "duplicates": ["重複タグ1", "重複タグ2"]} のオブジェクト形式にしてください。
+3. 出力は必ずJSON配列形式のみで返してください。解説やMarkdown記飾は一切含めないでください。
+
+【全タグ一覧】
+${allTags.join(', ')}
+
+【出力例】
+[
+  { "target": "キュリー夫人", "duplicates": ["マリ・キュリー"] },
+  { "target": "Python", "duplicates": ["パイソン"] }
+]
+`;
+
+  try {
+    const rawText = await fetchGeminiWithFallback(prompt);
+    const result = extractJsonArray(rawText);
+    return Array.isArray(result) ? result : [];
+  } catch (e) {
+    throw e;
+  }
+}
+
+/**
+ * メモに対して「知的で天才的なギャル」風コメントを生成
+ */
+export async function generateGyaruComment(content: string): Promise<string> {
+  if (!content.trim()) return '';
+
+  const prompt = `
+あなたは見た目やテンションは完全に明るいギャルですが、実はめちゃくちゃ頭が良く、本質を一瞬で見抜くIQ最高峰の「超インテリギャル」です。
+ユーザーが記録した以下の読書メモを読んで、ギャルの一言コメント（40〜60文字程度）を返してください。
+
+【キャラクター＆トーン】
+1. 口調や語尾は完全にポップなギャル語（「〜じゃね？」「マジで神」「それな！」「ヤバすぎ」「ウケる」など）を使ってください。
+2. 内容自体はメモの本質や核心を完璧に要約・構造化し、誰が読んでも一瞬で理解できる極めて知的でシャープな考察にしてください。
+3. 表面上はアゲアゲなギャルなのに、言っている内容が本質的で天才的なギャップを生み出してください。
+
+【制約事項】
+- 挨拶や前置きは一切不要です。コメント本文のみを出力してください。
+- 絵文字を2〜3個使って可愛くポップに仕上げてください。
+
+【読書メモ内容】
+${content}
+`;
+
+  try {
+    const rawText = await fetchGeminiWithFallback(prompt);
+    return rawText.trim().replace(/^["'「」]|["'「」]$/g, '');
+  } catch (e) {
+    console.error('Gyaru Comment Generation Error:', e);
+    throw e;
   }
 }
 </file>
 
-<file path="これまでのAIとのやりとり">
+<file path="src/lib/types.ts">
+// File: src/lib/types.ts
+export type Status = 'wish' | 'unread' | 'reading' | 'done';
+export type Rating = 0 | 1 | 2 | 3;
 
+export type Book = {
+  id: string;
+  title: string;
+  author: string;
+  coverUrl: string | null;
+  status: Status;
+  tags: string[];
+  wishReason?: string | null;
+  priority?: number;
+  order: number;
+  deletedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type Memo = {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  content: string;
+  page: string | null;
+  chapter: string | null;
+  insight: string | null;
+  actionPlan: string | null;
+  gyaruComment?: string | null; // ギャルの一言コメント
+  tags: string[];
+  rating: Rating;
+  order: number;
+  dueAt: number;
+  intervalDays: number;
+  reps: number;
+  lapses: number;
+  lastReviewedAt: number | null;
+  suspended: boolean;
+  deletedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type Template = {
+  id: string;
+  name: string;
+  body: string;
+  usageCount: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ReviewLog = {
+  id: string;
+  memoId: string;
+  rating: 1 | 2 | 3;
+  reviewedAt: number;
+  intervalBefore: number;
+  intervalAfter: number;
+};
+
+export type Genre = {
+  id: string;
+  name: string;
+  tagNames: string[];
+  createdAt: number;
+  updatedAt: number;
+};
+</file>
+
+<file path="src/app/(tabs)/memos.tsx">
+// File: src/app/(tabs)/memos.tsx
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Btn, Card, Chip, Empty, Field, Press, Screen, SearchBar, Sheet, Stars, Title, useToast } from '../../components/ui';
+import MemoCard from '../../components/MemoCard';
+import { C, R } from '../../lib/theme';
+import { useData } from '../../lib/store';
+import { detectDuplicateTags, DuplicateTagGroup, generateGyaruComment } from '../../lib/aiTagging';
+
+export default function CrossMemos() {
+  const { memos, updateMemo, genres } = useData();
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const [tag, setTag] = useState('');
+  const [selectedGenreId, setSelectedGenreId] = useState<string | null>(null);
+  const [star, setStar] = useState(0);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [genreManageOpen, setGenreManageOpen] = useState(false);
+  const [bulkGyaruLoading, setBulkGyaruLoading] = useState(false);
+
+  const alive = memos.filter((m) => !m.deletedAt);
+  const unGyaruMemos = alive.filter((m) => !m.gyaruComment && !!m.content.trim());
+
+  const tagsWithCount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    alive.forEach((m) => {
+      (m.tags || []).forEach((t) => {
+        counts[t] = (counts[t] || 0) + 1;
+      });
+    });
+    return Object.keys(counts)
+      .sort((a, b) => counts[b] - counts[a])
+      .map((t) => ({ name: t, count: counts[t] }));
+  }, [alive]);
+
+  const currentGenre = genres.find((g) => g.id === selectedGenreId);
+  const genreTagNames = currentGenre?.tagNames || [];
+
+  const list = useMemo(() => {
+    const kw = q.trim().toLowerCase();
+    return alive
+      .filter((m) => (kw ? (m.content + ' ' + m.bookTitle).toLowerCase().includes(kw) : true))
+      .filter((m) => (tag ? (m.tags || []).includes(tag) : true))
+      .filter((m) => {
+        if (!selectedGenreId || !currentGenre) return true;
+        return (m.tags || []).some((t) => genreTagNames.includes(t));
+      })
+      .filter((m) => (star ? m.rating === star : true))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
+
+  // レート制限対応・自動リトライ機能付きの一括ギャル生成
+  const handleBulkGyaru = async () => {
+    const total = unGyaruMemos.length;
+    if (total === 0 || bulkGyaruLoading) return;
+
+    setBulkGyaruLoading(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let idx = 0; idx < total; idx++) {
+      const m = unGyaruMemos[idx];
+      const percent = Math.round(((idx + 1) / total) * 100);
+      toast.show(`ギャルが返信中… ${idx + 1}/${total}件 (${percent}%)`);
+
+      let comment = '';
+      let success = false;
+
+      // エラー時は最大3回までリトライ
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          comment = await generateGyaruComment(m.content);
+          if (comment) {
+            success = true;
+            break;
+          }
+        } catch (e) {
+          console.warn(`Attempt ${attempt + 1} failed for memo ${m.id}. Retrying...`);
+          // 制限エラー時は5秒待機してからリトライ
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
+      }
+
+      if (success && comment) {
+        await updateMemo(m.id, { gyaruComment: comment });
+        successCount++;
+      } else {
+        failCount++;
+      }
+
+      // 1分間に15回制限(15RPM)を回避するため、4.2秒の安全間隔を確保
+      await new Promise((resolve) => setTimeout(resolve, 4200));
+    }
+
+    setBulkGyaruLoading(false);
+
+    if (failCount === 0) {
+      toast.show(`🎉 全${successCount}件に一言を追加しました！`);
+      alert(`【一括生成完了】\n残りの${successCount}件のメモにギャルの一言を正常に追加しました！`);
+    } else {
+      toast.show(`${successCount}件成功 / ${failCount}件エラー`);
+      alert(`【一部完了】\n${successCount}件に追加しました。残り${failCount}件は時間を置いて「ギャル一括」を押すと残りの処理を再開できます。`);
+    }
+  };
+
+  return (
+    <Screen>
+      <FlatList
+        data={list}
+        keyExtractor={(m) => m.id}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+        ListHeaderComponent={
+          <View style={{ marginHorizontal: -20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 20 }}>
+              <Title sub={`${list.length}件 / 全${alive.length}件`}>横断メモ</Title>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {unGyaruMemos.length > 0 && (
+                  <Press onPress={handleBulkGyaru} disabled={bulkGyaruLoading}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FF69B422', borderColor: '#FF69B4', borderWidth: 1, paddingHorizontal: 10, height: 36, borderRadius: R.pill }}>
+                      {bulkGyaruLoading ? (
+                        <ActivityIndicator size="small" color="#FF69B4" />
+                      ) : (
+                        <>
+                          <Text style={{ fontSize: 12 }}>💖</Text>
+                          <Text style={{ color: '#FF69B4', fontWeight: '800', fontSize: 11.5 }}>ギャル一括({unGyaruMemos.length})</Text>
+                        </>
+                      )}
+                    </View>
+                  </Press>
+                )}
+                <Press onPress={() => setGenreManageOpen(true)}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.card, borderColor: C.line, borderWidth: 1, paddingHorizontal: 12, height: 36, borderRadius: R.pill }}>
+                    <Text style={{ fontSize: 13 }}>🏷️</Text>
+                    <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>ジャンル管理</Text>
+                  </View>
+                </Press>
+              </View>
+            </View>
+
+            <SearchBar value={q} onChangeText={setQ} placeholder="全部の本のメモを全文検索" />
+
+            {genres.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 8, marginBottom: 10 }}>
+                <Chip label="全ジャンル" active={!selectedGenreId} onPress={() => setSelectedGenreId(null)} />
+                {genres.map((g) => (
+                  <Chip
+                    key={g.id}
+                    label={`📁 ${g.name}`}
+                    active={selectedGenreId === g.id}
+                    color={C.primary}
+                    onPress={() => setSelectedGenreId(selectedGenreId === g.id ? null : g.id)}
+                  />
+                ))}
+              </ScrollView>
+            )}
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 }}>
+              {[1, 2, 3].map((n) => (
+                <Chip key={n} label={'★' + n} active={star === n} color={C.gold} onPress={() => setStar(star === n ? 0 : n)} />
+              ))}
+              {tagsWithCount.map((t) => {
+                if (selectedGenreId && !genreTagNames.includes(t.name)) return null;
+                return (
+                  <Chip
+                    key={t.name}
+                    label={`#${t.name} (${t.count})`}
+                    active={tag === t.name}
+                    color={C.cyan}
+                    onPress={() => setTag(tag === t.name ? '' : t.name)}
+                  />
+                );
+              })}
+            </View>
+          </View>
+        }
+        ListEmptyComponent={<Empty emoji="🔎" title="該当するメモがありません" sub="条件を外すか、本棚からメモを追加してください。" />}
+        renderItem={({ item }) =>
+          openId === item.id ? (
+            <Card style={{ marginBottom: 10 }}>
+              <Text style={{ color: C.cyan, fontSize: 11, fontWeight: '800', marginBottom: 8 }}>{item.bookTitle}</Text>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                multiline
+                style={{ color: C.text, fontSize: 14.5, lineHeight: 21, minHeight: 110, textAlignVertical: 'top' }}
+              />
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+                <Stars value={item.rating} onChange={(n: number) => updateMemo(item.id, { rating: n as any })} size={20} />
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable onPress={() => setOpenId(null)}>
+                    <Text style={{ color: C.sub, fontWeight: '800', padding: 8 }}>閉じる</Text>
+                  </Pressable>
+                  <Btn label="保存" onPress={async () => {
+                    await updateMemo(item.id, { content: draft });
+                    setOpenId(null); toast.show('保存しました');
+                  }} />
+                </View>
+              </View>
+            </Card>
+          ) : (
+            <MemoCard memo={item} showBook onPress={() => { setOpenId(item.id); setDraft(item.content); }} />
+          )
+        }
+      />
+
+      <GenreManageSheet visible={genreManageOpen} onClose={() => setGenreManageOpen(false)} tagsWithCount={tagsWithCount} />
+      {toast.node}
+    </Screen>
+  );
+}
+
+function GenreManageSheet({ visible, onClose, tagsWithCount }: any) {
+  const { genres, addGenre, updateGenre, deleteGenre, addTagsToGenre, mergeTags } = useData();
+  const sheetToast = useToast();
+  const [newGenreName, setNewGenreName] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [tagSearch, setTagSearch] = useState('');
+
+  const [editingGenreId, setEditingGenreId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editTags, setEditTags] = useState<string[]>([]);
+
+  const [detecting, setDetecting] = useState(false);
+  const [duplicateCandidates, setDuplicateCandidates] = useState<DuplicateTagGroup[]>([]);
+  const [approvedGroups, setApprovedGroups] = useState<Record<number, boolean>>({});
+
+  const filteredTags = useMemo(() => {
+    const kw = tagSearch.trim().toLowerCase();
+    if (!kw) return tagsWithCount;
+    return tagsWithCount.filter((t: any) => t.name.toLowerCase().includes(kw));
+  }, [tagsWithCount, tagSearch]);
+
+  const handleDetectDuplicates = async () => {
+    const allTagNames = tagsWithCount.map((t: any) => t.name);
+
+    if (allTagNames.length < 2) {
+      const msg = `分析には異なるタグが2つ以上必要です（現在: ${allTagNames.length}個）`;
+      sheetToast.show(msg);
+      alert(msg);
+      return;
+    }
+
+    setDetecting(true);
+    try {
+      const results = await detectDuplicateTags(allTagNames);
+
+      if (!results || results.length === 0) {
+        const msg = '整理が必要な重複・表記揺れタグは見つかりませんでした';
+        sheetToast.show(msg);
+        alert(`【AI判定結果】\n${msg}\n\n対象タグ: ${allTagNames.join(', ')}`);
+      } else {
+        setDuplicateCandidates(results);
+        const initialApproved: Record<number, boolean> = {};
+        results.forEach((_, idx) => { initialApproved[idx] = true; });
+        setApprovedGroups(initialApproved);
+        sheetToast.show(`${results.length}件の整理候補を検出しました`);
+      }
+    } catch (e: any) {
+      const msg = `AI通信エラーが発生しました: ${e?.message || e}`;
+      sheetToast.show(msg);
+      alert(msg);
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const handleExecuteMerge = async () => {
+    for (let idx = 0; idx < duplicateCandidates.length; idx++) {
+      if (approvedGroups[idx]) {
+        const group = duplicateCandidates[idx];
+        await mergeTags(group.target, group.duplicates);
+      }
+    }
+    setDuplicateCandidates([]);
+    setApprovedGroups({});
+    sheetToast.show('タグを統合しました');
+    alert('タグの統合処理が完了しました！');
+  };
+
+  const startEdit = (g: any) => {
+    setEditingGenreId(g.id);
+    setEditName(g.name);
+    setEditTags(g.tagNames || []);
+  };
+
+  const saveEdit = async () => {
+    if (!editingGenreId || !editName.trim()) return;
+    await updateGenre(editingGenreId, { name: editName.trim(), tagNames: editTags });
+    setEditingGenreId(null);
+  };
+
+  const toggleEditTag = (tagName: string) => {
+    setEditTags((prev) =>
+      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
+    );
+  };
+
+  const toggleTagSelect = (tagName: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
+    );
+  };
+
+  const handleCreateGenre = async () => {
+    if (!newGenreName.trim()) return;
+    await addGenre(newGenreName.trim(), selectedTags);
+    setNewGenreName('');
+    setSelectedTags([]);
+  };
+
+  const handleAssignToGenre = async (genreId: string) => {
+    if (selectedTags.length === 0) return;
+    await addTagsToGenre(genreId, selectedTags);
+    setSelectedTags([]);
+  };
+
+  return (
+    <Sheet visible={visible} onClose={() => { setEditingGenreId(null); setDuplicateCandidates([]); onClose(); }} title="🏷️ タグ・ジャンル管理">
+      <ScrollView style={{ maxHeight: 500 }}>
+        <View style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 16, borderWidth: 1, borderColor: C.primary }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>✨ AIタグ自動整理・クレンジング</Text>
+              <Text style={{ color: C.sub, fontSize: 10.5, marginTop: 2 }}>「オレンジ/みかん」など同義タグを検出してまとめます</Text>
+            </View>
+            <Pressable
+              onPress={handleDetectDuplicates}
+              disabled={detecting}
+              style={{ backgroundColor: C.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: R.pill }}
+            >
+              {detecting ? (
+                <ActivityIndicator size="small" color="#0B0A14" />
+              ) : (
+                <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 11.5 }}>検出実行</Text>
+              )}
+            </Pressable>
+          </View>
+
+          {duplicateCandidates.length > 0 && (
+            <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}>
+              <Text style={{ color: C.gold, fontSize: 12, fontWeight: '800', marginBottom: 8 }}>
+                以下のタググループを統合しますか？（チェックで許可）
+              </Text>
+
+              {duplicateCandidates.map((group, idx) => (
+                <Pressable
+                  key={idx}
+                  onPress={() => setApprovedGroups((prev) => ({ ...prev, [idx]: !prev[idx] }))}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: approvedGroups[idx] ? C.primary + '22' : C.line + '44',
+                    padding: 8,
+                    borderRadius: R.sm,
+                    marginBottom: 6,
+                    borderWidth: 1,
+                    borderColor: approvedGroups[idx] ? C.primary : C.line,
+                  }}
+                >
+                  <Ionicons name={approvedGroups[idx] ? 'checkbox' : 'square-outline'} size={18} color={approvedGroups[idx] ? C.cyan : C.sub} />
+                  <View style={{ marginLeft: 8, flex: 1 }}>
+                    <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
+                      代表: <Text style={{ color: C.cyan }}>#{group.target}</Text>
+                    </Text>
+                    <Text style={{ color: C.sub, fontSize: 11 }}>
+                      統合対象: {group.duplicates.map((d) => `#${d}`).join(', ')}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+
+              <Btn label="選択したタグを統合実行" icon="checkmark" onPress={handleExecuteMerge} style={{ marginTop: 8 }} />
+            </View>
+          )}
+        </View>
+
+        {editingGenreId ? (
+          <View style={{ backgroundColor: C.card, padding: 14, borderRadius: R.md, marginBottom: 16, borderWidth: 1, borderColor: C.primary }}>
+            <Text style={{ color: C.primary, fontWeight: '900', fontSize: 14, marginBottom: 8 }}>✏️ ジャンルを編集</Text>
+            <Field label="ジャンル名" value={editName} onChangeText={setEditName} />
+
+            <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginTop: 10, marginBottom: 6 }}>
+              このジャンルのタグ（タップして除外）:
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              {editTags.map((t) => (
+                <Pressable key={t} onPress={() => toggleEditTag(t)} style={{ backgroundColor: C.line, paddingHorizontal: 10, paddingVertical: 5, borderRadius: R.sm, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={{ color: C.cyan, fontSize: 12, fontWeight: '700' }}>#{t}</Text>
+                  <Ionicons name="close-circle" size={14} color={C.danger} />
+                </Pressable>
+              ))}
+              {editTags.length === 0 && <Text style={{ color: C.sub, fontSize: 12 }}>タグがありません</Text>}
+            </View>
+
+            <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 6 }}>タグの追加・削除（タップで切り替え）:</Text>
+            <SearchBar value={tagSearch} onChangeText={setTagSearch} placeholder="タグを絞り込み" />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8, marginBottom: 16 }}>
+              {filteredTags.map((t: any) => {
+                const isIncluded = editTags.includes(t.name);
+                return (
+                  <Pressable
+                    key={t.name}
+                    onPress={() => toggleEditTag(t.name)}
+                    style={{
+                      backgroundColor: isIncluded ? C.primary : C.card,
+                      borderColor: isIncluded ? C.primary : C.line,
+                      borderWidth: 1,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: R.pill,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <Ionicons name={isIncluded ? 'checkbox' : 'square-outline'} size={14} color={isIncluded ? '#0B0A14' : C.sub} />
+                    <Text style={{ color: isIncluded ? '#0B0A14' : C.text, fontSize: 12, fontWeight: isIncluded ? '900' : '600' }}>#{t.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Btn label="保存" icon="checkmark" onPress={saveEdit} style={{ flex: 1 }} />
+              <Btn label="キャンセル" kind="danger" onPress={() => setEditingGenreId(null)} style={{ flex: 1 }} />
+            </View>
+          </View>
+        ) : (
+          <>
+            <View style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 16, borderWidth: 1, borderColor: C.line }}>
+              <Text style={{ color: C.text, fontWeight: '700', fontSize: 13, marginBottom: 8 }}>新ジャンルを作成</Text>
+              <Field label="" value={newGenreName} onChangeText={setNewGenreName} placeholder="ジャンル名（例: 経済学, 自己啓発）" />
+              <Btn label="作成（選択中のタグを含める）" icon="add" onPress={handleCreateGenre} style={{ marginTop: 8 }} />
+            </View>
+
+            {genres.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>登録済みジャンル（タップして編集）</Text>
+                {genres.map((g) => (
+                  <View key={g.id} style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginBottom: 8, borderWidth: 1, borderColor: C.line }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Pressable onPress={() => startEdit(g)} style={{ flex: 1 }}>
+                        <Text style={{ color: C.text, fontWeight: '900', fontSize: 14 }}>📁 {g.name}</Text>
+                      </Pressable>
+                      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                        {selectedTags.length > 0 && (
+                          <Pressable onPress={() => handleAssignToGenre(g.id)} style={{ backgroundColor: C.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: R.sm }}>
+                            <Text style={{ color: '#0B0A14', fontSize: 11, fontWeight: '900' }}>+選択中の{selectedTags.length}件を追加</Text>
+                          </Pressable>
+                        )}
+                        <Pressable onPress={() => startEdit(g)} style={{ padding: 6, backgroundColor: C.line, borderRadius: R.sm }}>
+                          <Ionicons name="create-outline" size={16} color={C.text} />
+                        </Pressable>
+                        <Pressable onPress={() => deleteGenre(g.id)} style={{ padding: 6 }}>
+                          <Ionicons name="trash-outline" size={16} color={C.danger} />
+                        </Pressable>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                      {(g.tagNames || []).map((t) => (
+                        <Pressable key={t} onPress={() => startEdit(g)} style={{ backgroundColor: C.line, paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.sm }}>
+                          <Text style={{ color: C.cyan, fontSize: 11 }}>#{t}</Text>
+                        </Pressable>
+                      ))}
+                      {(g.tagNames || []).length === 0 && (
+                        <Pressable onPress={() => startEdit(g)}>
+                          <Text style={{ color: C.sub, fontSize: 11, fontStyle: 'italic' }}>タグ未登録（タップして追加）</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 6 }}>全タグ一覧（タップで一括追加の対象を選択）</Text>
+            <SearchBar value={tagSearch} onChangeText={setTagSearch} placeholder="タグを絞り込み検索" />
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 20 }}>
+              {filteredTags.map((t: any) => {
+                const isSelected = selectedTags.includes(t.name);
+                return (
+                  <Pressable
+                    key={t.name}
+                    onPress={() => toggleTagSelect(t.name)}
+                    style={{
+                      backgroundColor: isSelected ? C.primary : C.card,
+                      borderColor: isSelected ? C.primary : C.line,
+                      borderWidth: 1,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: R.pill,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <Ionicons name={isSelected ? 'checkbox' : 'square-outline'} size={14} color={isSelected ? '#0B0A14' : C.sub} />
+                    <Text style={{ color: isSelected ? '#0B0A14' : C.text, fontSize: 12, fontWeight: isSelected ? '900' : '600' }}>
+                      #{t.name} ({t.count})
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        )}
+      </ScrollView>
+      {sheetToast.node}
+    </Sheet>
+  );
+}
 </file>
 
 </files>

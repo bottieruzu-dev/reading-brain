@@ -2,49 +2,45 @@
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 
-const MODEL_CANDIDATES = [
-  'gemini-3.6-flash',
-  'gemini-2.5-flash',
-  'gemini-flash-latest',
-];
+// 呼び出しモデルを gemini-3.6-flash のみに固定
+const TARGET_MODEL = 'gemini-3.6-flash';
 
 async function fetchGeminiWithFallback(prompt: string): Promise<string> {
   if (!GEMINI_API_KEY) {
     throw new Error('Gemini API Key (.env) が設定されていません');
   }
 
-  let lastError: Error | null = null;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${TARGET_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-  for (const model of MODEL_CANDIDATES) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
-      });
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    });
 
-      if (res.ok) {
-        const data = await res.json();
-        const parts = data?.candidates?.[0]?.content?.parts || [];
-        const fullText = parts
-          .map((p: any) => p.text || '')
-          .filter(Boolean)
-          .join('\n');
+    if (res.ok) {
+      const data = await res.json();
+      const parts = data?.candidates?.[0]?.content?.parts || [];
+      const fullText = parts
+        .map((p: any) => p.text || '')
+        .filter(Boolean)
+        .join('\n');
 
-        if (fullText) return fullText;
-      } else {
-        const errJson = await res.json().catch(() => ({}));
-        lastError = new Error(`API Error ${res.status}`);
-      }
-    } catch (e: any) {
-      lastError = e;
+      if (fullText) return fullText;
+    } else if (res.status === 429) {
+      throw new Error('API Error 429');
+    } else {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(`API Error ${res.status}`);
     }
+  } catch (e: any) {
+    throw e;
   }
 
-  throw lastError || new Error('すべてのGeminiモデル呼び出しに失敗しました');
+  throw new Error('Gemini APIからの返答が空でした');
 }
 
 function extractJsonArray(rawText: string): any[] {
@@ -128,9 +124,6 @@ ${allTags.join(', ')}
   }
 }
 
-/**
- * メモに対して「知的で天才的なギャル」風コメントを生成
- */
 export async function generateGyaruComment(content: string): Promise<string> {
   if (!content.trim()) return '';
 
