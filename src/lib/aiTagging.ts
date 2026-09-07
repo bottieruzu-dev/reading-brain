@@ -2,8 +2,8 @@
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 
-// 1日1,500回・1分15回無料の正式標準モデル
-const TARGET_MODEL = 'gemini-1.5-flash';
+// 一覧表にある1日500回（RPD 500）対応の無料枠モデルを指定
+const TARGET_MODEL = 'gemini-3.5-flash-lite';
 
 async function fetchGeminiWithFallback(prompt: string): Promise<string> {
   if (!GEMINI_API_KEY) {
