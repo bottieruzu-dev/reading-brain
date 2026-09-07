@@ -51,24 +51,50 @@ export default function CrossMemos() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
 
+  // 一括ギャルコメント生成処理（進捗率表示・待機時間・詳細エラー通知付き）
   const handleBulkGyaru = async () => {
-    if (unGyaruMemos.length === 0 || bulkGyaruLoading) return;
+    const total = unGyaruMemos.length;
+    if (total === 0 || bulkGyaruLoading) return;
+
     setBulkGyaruLoading(true);
-    toast.show(`${unGyaruMemos.length}件のメモにギャルが返信中…`);
-    let count = 0;
-    for (const m of unGyaruMemos) {
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let idx = 0; idx < total; idx++) {
+      const m = unGyaruMemos[idx];
+      const percent = Math.round(((idx + 1) / total) * 100);
+      toast.show(`ギャルが返信中… ${idx + 1}/${total}件 (${percent}%)`);
+
       try {
         const comment = await generateGyaruComment(m.content);
         if (comment) {
           await updateMemo(m.id, { gyaruComment: comment });
-          count++;
+          successCount++;
+        } else {
+          failCount++;
         }
-      } catch (e) {
-        console.error(e);
+      } catch (e: any) {
+        console.error('Bulk Gyaru Error:', e);
+        failCount++;
       }
+
+      // 503エラー（過負荷制限）防止のための1秒インターバル
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
+
     setBulkGyaruLoading(false);
-    toast.show(`${count}件にギャルの一言を追加しました！`);
+
+    // 画面への最終完了・エラー通知ダイアログ
+    if (failCount === 0) {
+      toast.show(`🎉 全${successCount}件に一言を追加しました！`);
+      alert(`【一括生成完了】\n全${successCount}件のメモにギャルの一言を正常に追加しました！`);
+    } else if (successCount > 0) {
+      toast.show(`${successCount}件成功 / ${failCount}件エラー`);
+      alert(`【一部完了】\n${successCount}件に一言を追加しましたが、${failCount}件は通信制限等で失敗しました。時間をおいて再試行してください。`);
+    } else {
+      toast.show(`通信エラーが発生しました`);
+      alert(`【エラー】\nGoogle APIのアクセス制限(503エラー等)により生成に失敗しました。数分時間をおいてから再度お試しください。`);
+    }
   };
 
   return (
