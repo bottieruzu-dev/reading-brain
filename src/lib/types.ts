@@ -9,8 +9,8 @@ export type Book = {
   coverUrl: string | null;
   status: Status;
   tags: string[];
-  wishReason?: string | null; // 読む目的・きっかけ
-  priority?: number;          // 優先度（1: 低, 2: 中, 3: 高/TOP3）
+  wishReason?: string | null;
+  priority?: number;
   order: number;
   deletedAt: number | null;
   createdAt: number;
@@ -26,6 +26,7 @@ export type Memo = {
   chapter: string | null;
   insight: string | null;
   actionPlan: string | null;
+  gyaruComment?: string | null; // ギャルの一言コメント
   tags: string[];
   rating: Rating;
   order: number;

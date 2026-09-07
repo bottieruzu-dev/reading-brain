@@ -6,7 +6,7 @@ import { Btn, Card, Chip, Empty, Field, Press, Screen, SearchBar, Sheet, Stars, 
 import MemoCard from '../../components/MemoCard';
 import { C, R } from '../../lib/theme';
 import { useData } from '../../lib/store';
-import { detectDuplicateTags, DuplicateTagGroup } from '../../lib/aiTagging';
+import { detectDuplicateTags, DuplicateTagGroup, generateGyaruComment } from '../../lib/aiTagging';
 
 export default function CrossMemos() {
   const { memos, updateMemo, genres } = useData();
@@ -18,8 +18,10 @@ export default function CrossMemos() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [genreManageOpen, setGenreManageOpen] = useState(false);
+  const [bulkGyaruLoading, setBulkGyaruLoading] = useState(false);
 
   const alive = memos.filter((m) => !m.deletedAt);
+  const un GyaruMemos = alive.filter((m) => !m.gyaruComment && !!m.content.trim());
 
   const tagsWithCount = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -49,6 +51,26 @@ export default function CrossMemos() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
 
+  const handleBulkGyaru = async () => {
+    if (unGyaruMemos.length === 0 || bulkGyaruLoading) return;
+    setBulkGyaruLoading(true);
+    toast.show(`${unGyaruMemos.length}件のメモにギャルが返信中…`);
+    let count = 0;
+    for (const m of unGyaruMemos) {
+      try {
+        const comment = await generateGyaruComment(m.content);
+        if (comment) {
+          await updateMemo(m.id, { gyaruComment: comment });
+          count++;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    setBulkGyaruLoading(false);
+    toast.show(`${count}件にギャルの一言を追加しました！`);
+  };
+
   return (
     <Screen>
       <FlatList
@@ -59,12 +81,28 @@ export default function CrossMemos() {
           <View style={{ marginHorizontal: -20 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 20 }}>
               <Title sub={`${list.length}件 / 全${alive.length}件`}>横断メモ</Title>
-              <Press onPress={() => setGenreManageOpen(true)}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.card, borderColor: C.line, borderWidth: 1, paddingHorizontal: 12, height: 36, borderRadius: R.pill }}>
-                  <Text style={{ fontSize: 13 }}>🏷️</Text>
-                  <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>ジャンル管理</Text>
-                </View>
-              </Press>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {unGyaruMemos.length > 0 && (
+                  <Press onPress={handleBulkGyaru} disabled={bulkGyaruLoading}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FF69B422', borderColor: '#FF69B4', borderWidth: 1, paddingHorizontal: 10, height: 36, borderRadius: R.pill }}>
+                      {bulkGyaruLoading ? (
+                        <ActivityIndicator size="small" color="#FF69B4" />
+                      ) : (
+                        <>
+                          <Text style={{ fontSize: 12 }}>💖</Text>
+                          <Text style={{ color: '#FF69B4', fontWeight: '800', fontSize: 11.5 }}>ギャル一括({unGyaruMemos.length})</Text>
+                        </>
+                      )}
+                    </View>
+                  </Press>
+                )}
+                <Press onPress={() => setGenreManageOpen(true)}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.card, borderColor: C.line, borderWidth: 1, paddingHorizontal: 12, height: 36, borderRadius: R.pill }}>
+                    <Text style={{ fontSize: 13 }}>🏷️</Text>
+                    <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>ジャンル管理</Text>
+                  </View>
+                </Press>
+              </View>
             </View>
 
             <SearchBar value={q} onChangeText={setQ} placeholder="全部の本のメモを全文検索" />
@@ -162,7 +200,6 @@ function GenreManageSheet({ visible, onClose, tagsWithCount }: any) {
 
   const handleDetectDuplicates = async () => {
     const allTagNames = tagsWithCount.map((t: any) => t.name);
-    console.log('🤖 [ジャンル管理] 検出実行ボタンが押されました。現在の全タグ:', allTagNames);
 
     if (allTagNames.length < 2) {
       const msg = `分析には異なるタグが2つ以上必要です（現在: ${allTagNames.length}個）`;
@@ -174,7 +211,6 @@ function GenreManageSheet({ visible, onClose, tagsWithCount }: any) {
     setDetecting(true);
     try {
       const results = await detectDuplicateTags(allTagNames);
-      console.log('🤖 [ジャンル管理] 検出完了。AIからの結果:', results);
 
       if (!results || results.length === 0) {
         const msg = '整理が必要な重複・表記揺れタグは見つかりませんでした';
@@ -188,7 +224,6 @@ function GenreManageSheet({ visible, onClose, tagsWithCount }: any) {
         sheetToast.show(`${results.length}件の整理候補を検出しました`);
       }
     } catch (e: any) {
-      console.error('❌ [ジャンル管理] 検出エラー発生:', e);
       const msg = `AI通信エラーが発生しました: ${e?.message || e}`;
       sheetToast.show(msg);
       alert(msg);

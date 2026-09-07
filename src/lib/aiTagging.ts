@@ -18,7 +18,6 @@ async function fetchGeminiWithFallback(prompt: string): Promise<string> {
   for (const model of MODEL_CANDIDATES) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
     try {
-      console.log(`🔍 [Gemini API] モデル呼び出し試行: ${model}`);
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -35,15 +34,12 @@ async function fetchGeminiWithFallback(prompt: string): Promise<string> {
           .filter(Boolean)
           .join('\n');
 
-        console.log(`✅ [Gemini API] 通信成功 (${model})。生レスポンス:`, fullText);
         if (fullText) return fullText;
       } else {
         const errJson = await res.json().catch(() => ({}));
-        console.warn(`⚠️ [Gemini API] ${model} 失敗 ${res.status}:`, errJson);
         lastError = new Error(`API Error ${res.status}`);
       }
     } catch (e: any) {
-      console.error(`❌ [Gemini API] 通信エラー (${model}):`, e);
       lastError = e;
     }
   }
@@ -55,12 +51,9 @@ function extractJsonArray(rawText: string): any[] {
   try {
     const clean = rawText.replace(/```json|```/g, '').trim();
     const match = clean.match(/\[[\s\S]*\]/);
-    if (match) {
-      return JSON.parse(match[0]);
-    }
+    if (match) return JSON.parse(match[0]);
     return JSON.parse(clean);
   } catch (e) {
-    console.error('❌ [JSON Parse Error] パース失敗:', e, 'Raw Text:', rawText);
     return [];
   }
 }
@@ -95,7 +88,6 @@ ${content}
     const result = extractJsonArray(rawText);
     return Array.isArray(result) ? result : [];
   } catch (e) {
-    console.error('AI Tag Suggestion Error:', e);
     throw e;
   }
 }
@@ -108,16 +100,9 @@ export type DuplicateTagGroup = {
 export async function detectDuplicateTags(allTags: string[]): Promise<DuplicateTagGroup[]> {
   if (allTags.length < 2) return [];
 
-  console.log('📤 [AI整理] 送信するタグ一覧:', allTags);
-
   const prompt = `
 あなたはデータクレンジングの専門家です。
 以下のタグ一覧から、実質的に同じ意味・人物・概念を表している「表記揺れ」「同義語」「カタカナ/英語表記」「略称/正式名称」のグループを検出してください。
-
-【例】
-- 「オレンジ」と「みかん」 ➔ 代表: "オレンジ", 重複: ["みかん"]
-- 「マリ・キュリー」と「キュリー夫人」 ➔ 代表: "キュリー夫人", 重複: ["マリ・キュリー"]
-- 「Python」と「パイソン」 ➔ 代表: "Python", 重複: ["パイソン"]
 
 【制約事項】
 1. 本当に意味が同一または極めて類似しているものだけを選んでください。少しでも意味が異なるものは含めないでください。
@@ -137,10 +122,35 @@ ${allTags.join(', ')}
   try {
     const rawText = await fetchGeminiWithFallback(prompt);
     const result = extractJsonArray(rawText);
-    console.log('📥 [AI整理] 抽出されたグループ構造:', result);
     return Array.isArray(result) ? result : [];
   } catch (e) {
-    console.error('AI Duplicate Tag Detection Error:', e);
+    throw e;
+  }
+}
+
+/**
+ * メモに対してギャル風ポジティブコメントを生成
+ */
+export async function generateGyaruComment(content: string): Promise<string> {
+  if (!content.trim()) return '';
+
+  const prompt = `
+あなたは明るく前向きで共感力が高いギャルです。
+ユーザーが記録した以下の読書メモを読んで、ギャル語（「それな！」「マジ神！」「ヤバすぎ」「〜じゃね？」など）を使って、親しみやすくポジティブな一言コメント（30〜50文字程度）を返してください。
+
+【制約事項】
+1. 挨拶や前置きは一切不要です。ギャルの一言コメントのみを出力してください。
+2. 絵文字を2〜3個使って可愛くポップに返してください。
+
+【読書メモ内容】
+${content}
+`;
+
+  try {
+    const rawText = await fetchGeminiWithFallback(prompt);
+    return rawText.trim().replace(/^["'「」]|["'「」]$/g, '');
+  } catch (e) {
+    console.error('Gyaru Comment Generation Error:', e);
     throw e;
   }
 }
