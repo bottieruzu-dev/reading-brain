@@ -6,7 +6,13 @@ import { Btn, Card, Chip, Empty, Field, Press, Screen, SearchBar, Sheet, Stars, 
 import MemoCard from '../../components/MemoCard';
 import { C, R } from '../../lib/theme';
 import { useData } from '../../lib/store';
-import { detectDuplicateTags, DuplicateTagGroup, generateGyaruComment } from '../../lib/aiTagging';
+import {
+  detectDuplicateTags,
+  DuplicateTagGroup,
+  generateGyaruComment,
+  generateInvestorComment,
+  generateResearcherComment,
+} from '../../lib/aiTagging';
 
 export default function CrossMemos() {
   const { memos, updateMemo, genres } = useData();
@@ -18,10 +24,20 @@ export default function CrossMemos() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [genreManageOpen, setGenreManageOpen] = useState(false);
-  const [bulkGyaruLoading, setBulkGyaruLoading] = useState(false);
+
+  // 一括生成用の状態管理
+  const [bulkLoadingType, setBulkLoadingType] = useState<'gyaru' | 'researcher' | 'investor' | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{
+    current: number;
+    total: number;
+    percent: number;
+    label: string;
+  } | null>(null);
 
   const alive = memos.filter((m) => !m.deletedAt);
   const unGyaruMemos = alive.filter((m) => !m.gyaruComment && !!m.content.trim());
+  const unResearcherMemos = alive.filter((m) => !m.researcherComment && !!m.content.trim());
+  const unInvestorMemos = alive.filter((m) => !m.investorComment && !!m.content.trim());
 
   const tagsWithCount = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -51,59 +67,70 @@ export default function CrossMemos() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
 
-  // レート制限および各種APIエラー対応の一括ギャル生成
-  const handleBulkGyaru = async () => {
-    const total = unGyaruMemos.length;
-    if (total === 0 || bulkGyaruLoading) return;
+  // ギャル・研究者・投資家の共通一括生成ハンドラー
+  const handleBulkGenerate = async (type: 'gyaru' | 'researcher' | 'investor') => {
+    let targets: typeof alive = [];
+    if (type === 'gyaru') targets = unGyaruMemos;
+    else if (type === 'researcher') targets = unResearcherMemos;
+    else if (type === 'investor') targets = unInvestorMemos;
 
-    setBulkGyaruLoading(true);
+    const total = targets.length;
+    if (total === 0 || bulkLoadingType) return;
+
+    setBulkLoadingType(type);
     let successCount = 0;
     let lastErrorMsg = '';
 
+    const typeName = type === 'gyaru' ? 'ギャル' : type === 'researcher' ? '研究者' : '投資家';
+
     for (let idx = 0; idx < total; idx++) {
-      const m = unGyaruMemos[idx];
+      const m = targets[idx];
       const percent = Math.round(((idx + 1) / total) * 100);
+
+      setBulkProgress({
+        current: idx + 1,
+        total,
+        percent,
+        label: `${typeName}コメント生成中…`,
+      });
 
       let comment = '';
       let success = false;
 
       for (let attempt = 0; attempt < 2; attempt++) {
-        toast.show(`ギャル返信中… ${idx + 1}/${total}件 (${percent}%)${attempt > 0 ? ' [再試行中]' : ''}`);
-
         try {
-          comment = await generateGyaruComment(m.content);
+          if (type === 'gyaru') comment = await generateGyaruComment(m.content);
+          else if (type === 'researcher') comment = await generateResearcherComment(m.content);
+          else if (type === 'investor') comment = await generateInvestorComment(m.content);
+
           if (comment) {
             success = true;
             break;
           }
         } catch (e: any) {
           lastErrorMsg = e?.message || String(e);
-          const is429 = lastErrorMsg.includes('429');
-          if (is429) {
-            toast.show(`API制限検出：30秒待機中… (${idx + 1}/${total}件)`);
-            await new Promise((resolve) => setTimeout(resolve, 30000));
-          } else {
-            await new Promise((resolve) => setTimeout(resolve, 3000));
-          }
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
 
       if (success && comment) {
-        await updateMemo(m.id, { gyaruComment: comment });
+        if (type === 'gyaru') await updateMemo(m.id, { gyaruComment: comment });
+        else if (type === 'researcher') await updateMemo(m.id, { researcherComment: comment });
+        else if (type === 'investor') await updateMemo(m.id, { investorComment: comment });
         successCount++;
       } else {
-        setBulkGyaruLoading(false);
-        alert(`【一括生成が一時停止しました】\n${successCount}件にギャルの一言を追加しました。\n\nエラー内容: ${lastErrorMsg}\n\n時間をおいてから再度「ギャル一括」を押すと続きから再開できます。`);
+        setBulkLoadingType(null);
+        setBulkProgress(null);
+        alert(
+          `【一括生成が一時停止しました】\n${successCount}件の${typeName}コメントを追加しました。\n\nエラー内容: ${lastErrorMsg}\n\n時間をおいてから再度押すと続きから再開できます。`
+        );
         return;
       }
-
-      // 15RPM（1分15回）制限を考慮し4.2秒待機
-      await new Promise((resolve) => setTimeout(resolve, 4200));
     }
 
-    setBulkGyaruLoading(false);
-    toast.show(`🎉 全${successCount}件に一言を追加しました！`);
-    alert(`【一括生成完了】\n全${successCount}件のメモにギャルの一言を正常に追加しました！`);
+    setBulkLoadingType(null);
+    setBulkProgress(null);
+    toast.show(`🎉 全${successCount}件に${typeName}コメントを追加しました！`);
   };
 
   return (
@@ -114,31 +141,154 @@ export default function CrossMemos() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
         ListHeaderComponent={
           <View style={{ marginHorizontal: -20 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 20 }}>
-              <Title sub={`${list.length}件 / 全${alive.length}件`}>横断メモ</Title>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {unGyaruMemos.length > 0 && (
-                  <Press onPress={handleBulkGyaru} disabled={bulkGyaruLoading}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FF69B422', borderColor: '#FF69B4', borderWidth: 1, paddingHorizontal: 10, height: 36, borderRadius: R.pill }}>
-                      {bulkGyaruLoading ? (
-                        <ActivityIndicator size="small" color="#FF69B4" />
-                      ) : (
-                        <>
-                          <Text style={{ fontSize: 12 }}>💖</Text>
-                          <Text style={{ color: '#FF69B4', fontWeight: '800', fontSize: 11.5 }}>ギャル一括({unGyaruMemos.length})</Text>
-                        </>
-                      )}
-                    </View>
-                  </Press>
-                )}
-                <Press onPress={() => setGenreManageOpen(true)}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.card, borderColor: C.line, borderWidth: 1, paddingHorizontal: 12, height: 36, borderRadius: R.pill }}>
-                    <Text style={{ fontSize: 13 }}>🏷️</Text>
-                    <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>ジャンル管理</Text>
+            <Title sub={`${list.length}件 / 全${alive.length}件`}>横断メモ</Title>
+
+            {/* 一括生成ボタン＆ジャンル管理ボタンのバー */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 8, marginBottom: 12 }}
+            >
+              {unGyaruMemos.length > 0 && (
+                <Press onPress={() => handleBulkGenerate('gyaru')} disabled={!!bulkLoadingType}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      backgroundColor: '#FF69B422',
+                      borderColor: '#FF69B4',
+                      borderWidth: 1,
+                      paddingHorizontal: 12,
+                      height: 36,
+                      borderRadius: R.pill,
+                    }}
+                  >
+                    {bulkLoadingType === 'gyaru' ? (
+                      <ActivityIndicator size="small" color="#FF69B4" />
+                    ) : (
+                      <Text style={{ fontSize: 12 }}>💖</Text>
+                    )}
+                    <Text style={{ color: '#FF69B4', fontWeight: '800', fontSize: 11.5 }}>
+                      ギャル一括({unGyaruMemos.length})
+                    </Text>
                   </View>
                 </Press>
+              )}
+
+              {unResearcherMemos.length > 0 && (
+                <Press onPress={() => handleBulkGenerate('researcher')} disabled={!!bulkLoadingType}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      backgroundColor: '#00BFFF22',
+                      borderColor: '#00BFFF',
+                      borderWidth: 1,
+                      paddingHorizontal: 12,
+                      height: 36,
+                      borderRadius: R.pill,
+                    }}
+                  >
+                    {bulkLoadingType === 'researcher' ? (
+                      <ActivityIndicator size="small" color="#00BFFF" />
+                    ) : (
+                      <Text style={{ fontSize: 12 }}>🔬</Text>
+                    )}
+                    <Text style={{ color: '#00BFFF', fontWeight: '800', fontSize: 11.5 }}>
+                      研究者一括({unResearcherMemos.length})
+                    </Text>
+                  </View>
+                </Press>
+              )}
+
+              {unInvestorMemos.length > 0 && (
+                <Press onPress={() => handleBulkGenerate('investor')} disabled={!!bulkLoadingType}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      backgroundColor: '#32CD3222',
+                      borderColor: '#32CD32',
+                      borderWidth: 1,
+                      paddingHorizontal: 12,
+                      height: 36,
+                      borderRadius: R.pill,
+                    }}
+                  >
+                    {bulkLoadingType === 'investor' ? (
+                      <ActivityIndicator size="small" color="#32CD32" />
+                    ) : (
+                      <Text style={{ fontSize: 12 }}>📈</Text>
+                    )}
+                    <Text style={{ color: '#32CD32', fontWeight: '800', fontSize: 11.5 }}>
+                      投資家一括({unInvestorMemos.length})
+                    </Text>
+                  </View>
+                </Press>
+              )}
+
+              <Press onPress={() => setGenreManageOpen(true)}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    backgroundColor: C.card,
+                    borderColor: C.line,
+                    borderWidth: 1,
+                    paddingHorizontal: 12,
+                    height: 36,
+                    borderRadius: R.pill,
+                  }}
+                >
+                  <Text style={{ fontSize: 13 }}>🏷️</Text>
+                  <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>ジャンル管理</Text>
+                </View>
+              </Press>
+            </ScrollView>
+
+            {/* 一括処理中のリアルタイムプログレス表示カード */}
+            {bulkProgress && (
+              <View
+                style={{
+                  backgroundColor: C.card,
+                  padding: 12,
+                  borderRadius: R.md,
+                  marginHorizontal: 20,
+                  marginBottom: 12,
+                  borderWidth: 1,
+                  borderColor: C.cyan,
+                }}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={{ color: C.text, fontWeight: '800', fontSize: 12.5 }}>
+                    {bulkProgress.label}
+                  </Text>
+                  <Text style={{ color: C.cyan, fontWeight: '900', fontSize: 12.5 }}>
+                    {bulkProgress.percent}% ({bulkProgress.current}/{bulkProgress.total}件)
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    height: 6,
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    borderRadius: 3,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <View
+                    style={{
+                      height: '100%',
+                      width: `${bulkProgress.percent}%`,
+                      backgroundColor: C.cyan,
+                    }}
+                  />
+                </View>
               </View>
-            </View>
+            )}
 
             <SearchBar value={q} onChangeText={setQ} placeholder="全部の本のメモを全文検索" />
 

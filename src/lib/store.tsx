@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   onAuthStateChanged,
+  signInAnonymously,
   signInWithEmailAndPassword,
   signOut as fbSignOut,
   type User,
@@ -95,7 +96,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [seedChecked, setSeedChecked] = useState(false);
 
-  useEffect(() => onAuthStateChanged(auth, (u) => { setUser(u); setAuthReady(true); }), []);
+  // 認証状態の監視 ＆ 未ログイン時は自動匿名ログイン
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      if (u) {
+        setUser(u);
+        setAuthReady(true);
+      } else {
+        try {
+          // メアド・パスワードなしで自動ログイン
+          await signInAnonymously(auth);
+        } catch (e) {
+          console.error('Anonymous Sign-In Error:', e);
+          setAuthReady(true);
+        }
+      }
+    });
+    return unsub;
+  }, []);
 
   const uid = user?.uid;
   const col = (sub: string) => collection(db, 'users', uid as string, sub);
@@ -301,7 +319,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const now = Date.now();
       const dupSet = new Set(duplicateTags);
 
-      // 1. Memos のタグ置換
       const targetMemos = memos.filter((m) =>
         (m.tags || []).some((t) => dupSet.has(t))
       );
@@ -319,7 +336,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await batch.commit();
       }
 
-      // 2. Books のタグ置換
       const targetBooks = books.filter((b) =>
         (b.tags || []).some((t) => dupSet.has(t))
       );
@@ -337,7 +353,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await batch.commit();
       }
 
-      // 3. Genres のタグ置換
       const targetGenres = genres.filter((g) =>
         (g.tagNames || []).some((t) => dupSet.has(t))
       );
