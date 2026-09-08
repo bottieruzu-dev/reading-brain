@@ -126,41 +126,35 @@ export default function Review() {
               <View>
                 <Text style={{ color: C.text, fontSize: 17, lineHeight: 27, fontWeight: '600' }}>{current.content}</Text>
 
-                {!!current.insight && (
-                  <View style={{ backgroundColor: C.primary + '22', padding: 10, borderRadius: R.sm, marginTop: 12 }}>
-                    <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>💡 {current.insight}</Text>
-                  </View>
-                )}
-
-                {!!current.actionPlan && (
-                  <View style={{ backgroundColor: C.gold + '22', padding: 10, borderRadius: R.sm, marginTop: 8 }}>
-                    <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>🎯 {current.actionPlan}</Text>
-                  </View>
-                )}
-
-                {/* 🌸 ギャルの一言コメント表示（復習カード内） */}
+                {/* 1. ギャルの一言 */}
                 {!!current.gyaruComment && (
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      backgroundColor: '#FF149318',
-                      padding: 10,
-                      borderRadius: R.md,
-                      marginTop: 10,
-                      borderWidth: 1,
-                      borderColor: '#FF69B466',
-                    }}
-                  >
-                    <Image
-                      source={require('../../../assets/gyaru.png')}
-                      style={{ width: 42, height: 42, borderRadius: 21, marginRight: 10 }}
-                    />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF149318', padding: 8, borderRadius: R.md, marginTop: 10, borderWidth: 1, borderColor: '#FF69B466' }}>
+                    <Image source={require('../../../assets/gyaru.png')} style={{ width: 36, height: 36, borderRadius: 18, marginRight: 8 }} />
                     <View style={{ flex: 1 }}>
-                      <Text style={{ color: '#FF69B4', fontSize: 10.5, fontWeight: '900' }}>ギャルの本質一言</Text>
-                      <Text style={{ color: C.text, fontSize: 12.5, fontWeight: '700', marginTop: 2, lineHeight: 18 }}>
-                        {current.gyaruComment}
-                      </Text>
+                      <Text style={{ color: '#FF69B4', fontSize: 10, fontWeight: '900' }}>ギャル</Text>
+                      <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 1 }}>{current.gyaruComment}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* 2. 研究者の一言 */}
+                {!!current.researcherComment && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#00BFFF18', padding: 8, borderRadius: R.md, marginTop: 6, borderWidth: 1, borderColor: '#00BFFF66' }}>
+                    <Image source={require('../../../assets/researcher.png')} style={{ width: 36, height: 36, borderRadius: 18, marginRight: 8 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#00BFFF', fontSize: 10, fontWeight: '900' }}>研究者</Text>
+                      <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 1 }}>{current.researcherComment}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* 3. 投資家の一言 */}
+                {!!current.investorComment && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#32CD3218', padding: 8, borderRadius: R.md, marginTop: 6, borderWidth: 1, borderColor: '#32CD3266' }}>
+                    <Image source={require('../../../assets/investor.png')} style={{ width: 36, height: 36, borderRadius: 18, marginRight: 8 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#32CD32', fontSize: 10, fontWeight: '900' }}>投資家</Text>
+                      <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 1 }}>{current.investorComment}</Text>
                     </View>
                   </View>
                 )}

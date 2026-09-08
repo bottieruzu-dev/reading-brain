@@ -26,7 +26,9 @@ export type Memo = {
   chapter: string | null;
   insight: string | null;
   actionPlan: string | null;
-  gyaruComment?: string | null; // ギャルの一言コメント
+  gyaruComment?: string | null;       // ギャルの一言
+  researcherComment?: string | null;  // 研究者の一言
+  investorComment?: string | null;    // 投資家の一言
   tags: string[];
   rating: Rating;
   order: number;

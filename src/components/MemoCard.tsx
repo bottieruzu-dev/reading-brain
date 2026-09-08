@@ -5,12 +5,12 @@ import { Card, Stars } from './ui';
 import { C, R } from '../lib/theme';
 import { retention } from '../lib/srs';
 import { useData } from '../lib/store';
-import { generateGyaruComment } from '../lib/aiTagging';
+import { generateGyaruComment, generateInvestorComment, generateResearcherComment } from '../lib/aiTagging';
 import type { Memo } from '../lib/types';
 
 export default function MemoCard({ memo, onPress, showBook }: any) {
   const { updateMemo } = useData();
-  const [loading, setLoading] = useState(false);
+  const [loadingType, setLoadingType] = useState<string | null>(null);
   const r = Math.round(retention(memo as Memo) * 100);
 
   const locationText = [
@@ -18,18 +18,24 @@ export default function MemoCard({ memo, onPress, showBook }: any) {
     memo.page ? `p.${memo.page}` : null,
   ].filter(Boolean).join(' ');
 
-  const handleGenerateGyaru = async () => {
-    if (!memo.content || loading) return;
-    setLoading(true);
+  const handleGenerate = async (type: 'gyaru' | 'researcher' | 'investor') => {
+    if (!memo.content || loadingType) return;
+    setLoadingType(type);
     try {
-      const comment = await generateGyaruComment(memo.content);
-      if (comment) {
-        await updateMemo(memo.id, { gyaruComment: comment });
+      if (type === 'gyaru') {
+        const comment = await generateGyaruComment(memo.content);
+        if (comment) await updateMemo(memo.id, { gyaruComment: comment });
+      } else if (type === 'researcher') {
+        const comment = await generateResearcherComment(memo.content);
+        if (comment) await updateMemo(memo.id, { researcherComment: comment });
+      } else if (type === 'investor') {
+        const comment = await generateInvestorComment(memo.content);
+        if (comment) await updateMemo(memo.id, { investorComment: comment });
       }
     } catch (e) {
       console.error(e);
     } finally {
-      setLoading(false);
+      setLoadingType(null);
     }
   };
 
@@ -61,57 +67,48 @@ export default function MemoCard({ memo, onPress, showBook }: any) {
         </View>
       )}
 
-      {/* 🌸 ギャルの一言表示 */}
+      {/* 🌸 1. ギャルの一言 */}
       {memo.gyaruComment ? (
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            backgroundColor: '#FF149318',
-            padding: 8,
-            borderRadius: R.md,
-            marginTop: 8,
-            borderWidth: 1,
-            borderColor: '#FF69B466',
-          }}
-        >
-          <Image
-            source={require('../../assets/gyaru.png')}
-            style={{ width: 38, height: 38, borderRadius: 19, marginRight: 8 }}
-          />
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF149318', padding: 8, borderRadius: R.md, marginTop: 8, borderWidth: 1, borderColor: '#FF69B466' }}>
+          <Image source={require('../../assets/gyaru.png')} style={{ width: 34, height: 34, borderRadius: 17, marginRight: 8 }} />
           <View style={{ flex: 1 }}>
-            <Text style={{ color: '#FF69B4', fontSize: 10, fontWeight: '900' }}>ギャルの一言</Text>
-            <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 1 }}>
-              {memo.gyaruComment}
-            </Text>
+            <Text style={{ color: '#FF69B4', fontSize: 10, fontWeight: '900' }}>ギャル</Text>
+            <Text style={{ color: C.text, fontSize: 11.5, fontWeight: '700', marginTop: 1 }}>{memo.gyaruComment}</Text>
           </View>
         </View>
       ) : (
-        <Pressable
-          onPress={handleGenerateGyaru}
-          disabled={loading}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            alignSelf: 'flex-start',
-            gap: 4,
-            backgroundColor: '#FF69B422',
-            borderColor: '#FF69B4',
-            borderWidth: 1,
-            paddingHorizontal: 8,
-            paddingVertical: 3,
-            borderRadius: R.pill,
-            marginTop: 8,
-          }}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color="#FF69B4" />
-          ) : (
-            <>
-              <Text style={{ fontSize: 10 }}>💖</Text>
-              <Text style={{ color: '#FF69B4', fontSize: 10.5, fontWeight: '800' }}>ギャルの一言を追加</Text>
-            </>
-          )}
+        <Pressable onPress={() => handleGenerate('gyaru')} disabled={!!loadingType} style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, backgroundColor: '#FF69B422', borderColor: '#FF69B4', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.pill, marginTop: 8 }}>
+          {loadingType === 'gyaru' ? <ActivityIndicator size="small" color="#FF69B4" /> : <Text style={{ color: '#FF69B4', fontSize: 10.5, fontWeight: '800' }}>💖 ギャルコメント追加</Text>}
+        </Pressable>
+      )}
+
+      {/* 🔬 2. 研究者の一言 */}
+      {memo.researcherComment ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#00BFFF18', padding: 8, borderRadius: R.md, marginTop: 6, borderWidth: 1, borderColor: '#00BFFF66' }}>
+          <Image source={require('../../assets/researcher.png')} style={{ width: 34, height: 34, borderRadius: 17, marginRight: 8 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#00BFFF', fontSize: 10, fontWeight: '900' }}>研究者</Text>
+            <Text style={{ color: C.text, fontSize: 11.5, fontWeight: '700', marginTop: 1 }}>{memo.researcherComment}</Text>
+          </View>
+        </View>
+      ) : (
+        <Pressable onPress={() => handleGenerate('researcher')} disabled={!!loadingType} style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, backgroundColor: '#00BFFF22', borderColor: '#00BFFF', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.pill, marginTop: 6 }}>
+          {loadingType === 'researcher' ? <ActivityIndicator size="small" color="#00BFFF" /> : <Text style={{ color: '#00BFFF', fontSize: 10.5, fontWeight: '800' }}>🔬 研究者コメント追加</Text>}
+        </Pressable>
+      )}
+
+      {/* 📈 3. 投資家の一言 */}
+      {memo.investorComment ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#32CD3218', padding: 8, borderRadius: R.md, marginTop: 6, borderWidth: 1, borderColor: '#32CD3266' }}>
+          <Image source={require('../../assets/investor.png')} style={{ width: 34, height: 34, borderRadius: 17, marginRight: 8 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#32CD32', fontSize: 10, fontWeight: '900' }}>投資家</Text>
+            <Text style={{ color: C.text, fontSize: 11.5, fontWeight: '700', marginTop: 1 }}>{memo.investorComment}</Text>
+          </View>
+        </View>
+      ) : (
+        <Pressable onPress={() => handleGenerate('investor')} disabled={!!loadingType} style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, backgroundColor: '#32CD3222', borderColor: '#32CD32', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.pill, marginTop: 6 }}>
+          {loadingType === 'investor' ? <ActivityIndicator size="small" color="#32CD32" /> : <Text style={{ color: '#32CD32', fontSize: 10.5, fontWeight: '800' }}>📈 投資家コメント追加</Text>}
         </Pressable>
       )}
 

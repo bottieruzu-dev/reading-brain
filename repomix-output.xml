@@ -2790,170 +2790,6 @@ yarn-error.*
 }
 </file>
 
-<file path="src/lib/aiTagging.ts">
-// File: src/lib/aiTagging.ts
-
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
-
-const MODEL_CANDIDATES = [
-  'gemini-3.6-flash',
-  'gemini-2.5-flash',
-  'gemini-flash-latest',
-];
-
-async function fetchGeminiWithFallback(prompt: string): Promise<string> {
-  if (!GEMINI_API_KEY) {
-    throw new Error('Gemini API Key (.env) が設定されていません');
-  }
-
-  let lastError: Error | null = null;
-
-  for (const model of MODEL_CANDIDATES) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const parts = data?.candidates?.[0]?.content?.parts || [];
-        const fullText = parts
-          .map((p: any) => p.text || '')
-          .filter(Boolean)
-          .join('\n');
-
-        if (fullText) return fullText;
-      } else {
-        const errJson = await res.json().catch(() => ({}));
-        lastError = new Error(`API Error ${res.status}`);
-      }
-    } catch (e: any) {
-      lastError = e;
-    }
-  }
-
-  throw lastError || new Error('すべてのGeminiモデル呼び出しに失敗しました');
-}
-
-function extractJsonArray(rawText: string): any[] {
-  try {
-    const clean = rawText.replace(/```json|```/g, '').trim();
-    const match = clean.match(/\[[\s\S]*\]/);
-    if (match) return JSON.parse(match[0]);
-    return JSON.parse(clean);
-  } catch (e) {
-    return [];
-  }
-}
-
-export async function suggestTagsForMemo(
-  content: string,
-  existingTags: string[]
-): Promise<string[]> {
-  if (!content.trim()) return [];
-
-  const prompt = `
-あなたは書籍メモの整理アシスタントです。
-以下のメモ内容を分析し、最も適切なタグを2〜5個提案してください。
-
-【制約事項】
-1. 可能な限り「既存タグリスト」にあるタグを優先して使用してください。
-2. 既存タグで不足している場合のみ、適切で簡潔な「新規タグ」を追加してください。
-3. 出力は必ずJSONの文字列配列形式のみで返してください。余計な解説やMarkdown記飾は一切含めないでください。
-
-【既存タグリスト】
-${existingTags.length > 0 ? existingTags.join(', ') : '（なし）'}
-
-【メモ内容】
-${content}
-
-【出力例】
-["経済学", "マクロ経済", "市場原理"]
-`;
-
-  try {
-    const rawText = await fetchGeminiWithFallback(prompt);
-    const result = extractJsonArray(rawText);
-    return Array.isArray(result) ? result : [];
-  } catch (e) {
-    throw e;
-  }
-}
-
-export type DuplicateTagGroup = {
-  target: string;
-  duplicates: string[];
-};
-
-export async function detectDuplicateTags(allTags: string[]): Promise<DuplicateTagGroup[]> {
-  if (allTags.length < 2) return [];
-
-  const prompt = `
-あなたはデータクレンジングの専門家です。
-以下のタグ一覧から、実質的に同じ意味・人物・概念を表している「表記揺れ」「同義語」「カタカナ/英語表記」「略称/正式名称」のグループを検出してください。
-
-【制約事項】
-1. 本当に意味が同一または極めて類似しているものだけを選んでください。少しでも意味が異なるものは含めないでください。
-2. 各グループは {"target": "代表タグ名", "duplicates": ["重複タグ1", "重複タグ2"]} のオブジェクト形式にしてください。
-3. 出力は必ずJSON配列形式のみで返してください。解説やMarkdown記飾は一切含めないでください。
-
-【全タグ一覧】
-${allTags.join(', ')}
-
-【出力例】
-[
-  { "target": "キュリー夫人", "duplicates": ["マリ・キュリー"] },
-  { "target": "Python", "duplicates": ["パイソン"] }
-]
-`;
-
-  try {
-    const rawText = await fetchGeminiWithFallback(prompt);
-    const result = extractJsonArray(rawText);
-    return Array.isArray(result) ? result : [];
-  } catch (e) {
-    throw e;
-  }
-}
-
-/**
- * メモに対して「知的で天才的なギャル」風コメントを生成
- */
-export async function generateGyaruComment(content: string): Promise<string> {
-  if (!content.trim()) return '';
-
-  const prompt = `
-あなたは見た目やテンションは完全に明るいギャルですが、実はめちゃくちゃ頭が良く、本質を一瞬で見抜くIQ最高峰の「超インテリギャル」です。
-ユーザーが記録した以下の読書メモを読んで、ギャルの一言コメント（40〜60文字程度）を返してください。
-
-【キャラクター＆トーン】
-1. 口調や語尾は完全にポップなギャル語（「〜じゃね？」「マジで神」「それな！」「ヤバすぎ」「ウケる」など）を使ってください。
-2. 内容自体はメモの本質や核心を完璧に要約・構造化し、誰が読んでも一瞬で理解できる極めて知的でシャープな考察にしてください。
-3. 表面上はアゲアゲなギャルなのに、言っている内容が本質的で天才的なギャップを生み出してください。
-
-【制約事項】
-- 挨拶や前置きは一切不要です。コメント本文のみを出力してください。
-- 絵文字を2〜3個使って可愛くポップに仕上げてください。
-
-【読書メモ内容】
-${content}
-`;
-
-  try {
-    const rawText = await fetchGeminiWithFallback(prompt);
-    return rawText.trim().replace(/^["'「」]|["'「」]$/g, '');
-  } catch (e) {
-    console.error('Gyaru Comment Generation Error:', e);
-    throw e;
-  }
-}
-</file>
-
 <file path="src/lib/types.ts">
 // File: src/lib/types.ts
 export type Status = 'wish' | 'unread' | 'reading' | 'done';
@@ -3079,35 +2915,40 @@ export default function CrossMemos() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
 
-  // レート制限対応・自動リトライ機能付きの一括ギャル生成
+  // レート制限および各種APIエラー対応の一括ギャル生成
   const handleBulkGyaru = async () => {
     const total = unGyaruMemos.length;
     if (total === 0 || bulkGyaruLoading) return;
 
     setBulkGyaruLoading(true);
     let successCount = 0;
-    let failCount = 0;
+    let lastErrorMsg = '';
 
     for (let idx = 0; idx < total; idx++) {
       const m = unGyaruMemos[idx];
       const percent = Math.round(((idx + 1) / total) * 100);
-      toast.show(`ギャルが返信中… ${idx + 1}/${total}件 (${percent}%)`);
 
       let comment = '';
       let success = false;
 
-      // エラー時は最大3回までリトライ
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        toast.show(`ギャル返信中… ${idx + 1}/${total}件 (${percent}%)${attempt > 0 ? ' [再試行中]' : ''}`);
+
         try {
           comment = await generateGyaruComment(m.content);
           if (comment) {
             success = true;
             break;
           }
-        } catch (e) {
-          console.warn(`Attempt ${attempt + 1} failed for memo ${m.id}. Retrying...`);
-          // 制限エラー時は5秒待機してからリトライ
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+        } catch (e: any) {
+          lastErrorMsg = e?.message || String(e);
+          const is429 = lastErrorMsg.includes('429');
+          if (is429) {
+            toast.show(`API制限検出：30秒待機中… (${idx + 1}/${total}件)`);
+            await new Promise((resolve) => setTimeout(resolve, 30000));
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+          }
         }
       }
 
@@ -3115,22 +2956,18 @@ export default function CrossMemos() {
         await updateMemo(m.id, { gyaruComment: comment });
         successCount++;
       } else {
-        failCount++;
+        setBulkGyaruLoading(false);
+        alert(`【一括生成が一時停止しました】\n${successCount}件にギャルの一言を追加しました。\n\nエラー内容: ${lastErrorMsg}\n\n時間をおいてから再度「ギャル一括」を押すと続きから再開できます。`);
+        return;
       }
 
-      // 1分間に15回制限(15RPM)を回避するため、4.2秒の安全間隔を確保
+      // 15RPM（1分15回）制限を考慮し4.2秒待機
       await new Promise((resolve) => setTimeout(resolve, 4200));
     }
 
     setBulkGyaruLoading(false);
-
-    if (failCount === 0) {
-      toast.show(`🎉 全${successCount}件に一言を追加しました！`);
-      alert(`【一括生成完了】\n残りの${successCount}件のメモにギャルの一言を正常に追加しました！`);
-    } else {
-      toast.show(`${successCount}件成功 / ${failCount}件エラー`);
-      alert(`【一部完了】\n${successCount}件に追加しました。残り${failCount}件は時間を置いて「ギャル一括」を押すと残りの処理を再開できます。`);
-    }
+    toast.show(`🎉 全${successCount}件に一言を追加しました！`);
+    alert(`【一括生成完了】\n全${successCount}件のメモにギャルの一言を正常に追加しました！`);
   };
 
   return (
@@ -3539,6 +3376,161 @@ function GenreManageSheet({ visible, onClose, tagsWithCount }: any) {
       {sheetToast.node}
     </Sheet>
   );
+}
+</file>
+
+<file path="src/lib/aiTagging.ts">
+// File: src/lib/aiTagging.ts
+
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+
+// 一覧表にある1日500回（RPD 500）対応の無料枠モデルを指定
+const TARGET_MODEL = 'gemini-3.5-flash-lite';
+
+async function fetchGeminiWithFallback(prompt: string): Promise<string> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('Gemini API Key (.env) が設定されていません');
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${TARGET_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const parts = data?.candidates?.[0]?.content?.parts || [];
+      const fullText = parts
+        .map((p: any) => p.text || '')
+        .filter(Boolean)
+        .join('\n');
+
+      if (fullText) return fullText;
+    } else {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(`API Error ${res.status}`);
+    }
+  } catch (e: any) {
+    throw e;
+  }
+
+  throw new Error('Gemini APIからの返答が空でした');
+}
+
+function extractJsonArray(rawText: string): any[] {
+  try {
+    const clean = rawText.replace(/```json|```/g, '').trim();
+    const match = clean.match(/\[[\s\S]*\]/);
+    if (match) return JSON.parse(match[0]);
+    return JSON.parse(clean);
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function suggestTagsForMemo(
+  content: string,
+  existingTags: string[]
+): Promise<string[]> {
+  if (!content.trim()) return [];
+
+  const prompt = `
+あなたは書籍メモの整理アシスタントです。
+以下のメモ内容を分析し、最も適切なタグを2〜5個提案してください。
+
+【制約事項】
+1. 可能な限り「既存タグリスト」にあるタグを優先して使用してください。
+2. 既存タグで不足している場合のみ、適切で簡潔な「新規タグ」を追加してください。
+3. 出力は必ずJSONの文字列配列形式のみで返してください。余計な解説やMarkdown記飾は一切含めないでください。
+
+【既存タグリスト】
+${existingTags.length > 0 ? existingTags.join(', ') : '（なし）'}
+
+【メモ内容】
+${content}
+
+【出力例】
+["経済学", "マクロ経済", "市場原理"]
+`;
+
+  try {
+    const rawText = await fetchGeminiWithFallback(prompt);
+    const result = extractJsonArray(rawText);
+    return Array.isArray(result) ? result : [];
+  } catch (e) {
+    throw e;
+  }
+}
+
+export type DuplicateTagGroup = {
+  target: string;
+  duplicates: string[];
+};
+
+export async function detectDuplicateTags(allTags: string[]): Promise<DuplicateTagGroup[]> {
+  if (allTags.length < 2) return [];
+
+  const prompt = `
+あなたはデータクレンジングの専門家です。
+以下のタグ一覧から、実質的に同じ意味・人物・概念を表している「表記揺れ」「同義語」「カタカナ/英語表記」「略称/正式名称」のグループを検出してください。
+
+【制約事項】
+1. 本当に意味が同一または極めて類似しているものだけを選んでください。少しでも意味が異なるものは含めないでください。
+2. 各グループは {"target": "代表タグ名", "duplicates": ["重複タグ1", "重複タグ2"]} のオブジェクト形式にしてください。
+3. 出力は必ずJSON配列形式のみで返してください。解説やMarkdown記飾は一切含めないでください。
+
+【全タグ一覧】
+${allTags.join(', ')}
+
+【出力例】
+[
+  { "target": "キュリー夫人", "duplicates": ["マリ・キュリー"] },
+  { "target": "Python", "duplicates": ["パイソン"] }
+]
+`;
+
+  try {
+    const rawText = await fetchGeminiWithFallback(prompt);
+    const result = extractJsonArray(rawText);
+    return Array.isArray(result) ? result : [];
+  } catch (e) {
+    throw e;
+  }
+}
+
+export async function generateGyaruComment(content: string): Promise<string> {
+  if (!content.trim()) return '';
+
+  const prompt = `
+あなたは見た目やテンションは完全に明るいギャルですが、実はめちゃくちゃ頭が良く、本質を一瞬で見抜くIQ最高峰の「超インテリギャル」です。
+ユーザーが記録した以下の読書メモを読んで、ギャルの一言コメント（40〜60文字程度）を返してください。
+
+【キャラクター＆トーン】
+1. 口調や語尾は完全にポップなギャル語（「〜じゃね？」「マジで神」「それな！」「ヤバすぎ」「ウケる」など）を使ってください。
+2. 内容自体はメモの本質や核心を完璧に要約・構造化し、誰が読んでも一瞬で理解できる極めて知的でシャープな考察にしてください。
+3. 表面上はアゲアゲなギャルなのに、言っている内容が本質的で天才的なギャップを生み出してください。
+
+【制約事項】
+- 挨拶や前置きは一切不要です。コメント本文のみを出力してください。
+- 絵文字を2〜3個使って可愛くポップに仕上げてください。
+
+【読書メモ内容】
+${content}
+`;
+
+  try {
+    const rawText = await fetchGeminiWithFallback(prompt);
+    return rawText.trim().replace(/^["'「」]|["'「」]$/g, '');
+  } catch (e) {
+    console.error('Gyaru Comment Generation Error:', e);
+    throw e;
+  }
 }
 </file>
 
