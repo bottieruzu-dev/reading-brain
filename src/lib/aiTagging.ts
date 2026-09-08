@@ -2,9 +2,9 @@
 
 const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY || '';
 
-// エージェントごとのOpenRouter指定モデル (パターンA: 有料高品質スラグ)
+// エージェントごとのOpenRouter指定モデル
 const MODEL_GAL = 'google/gemini-2.0-flash-exp';
-const MODEL_RESEARCHER = 'deepseek/deepseek-r1';
+const MODEL_RESEARCHER = 'deepseek/deepseek-chat'; // R1から思考なしの高速・超安価版V3へ変更
 const MODEL_INVESTOR = 'qwen/qwen-2.5-72b-instruct';
 
 async function fetchOpenRouter(prompt: string, model: string): Promise<string> {
