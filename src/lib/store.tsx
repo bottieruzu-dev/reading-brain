@@ -2,7 +2,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   onAuthStateChanged,
-  signInAnonymously,
   signInWithEmailAndPassword,
   signOut as fbSignOut,
   type User,
@@ -96,21 +95,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [seedChecked, setSeedChecked] = useState(false);
 
-  // 認証状態の監視 ＆ 未ログイン時は自動匿名ログイン
+  // 認証状態の監視のみ（自動匿名ログイン処理を撤去）
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      if (u) {
-        setUser(u);
-        setAuthReady(true);
-      } else {
-        try {
-          // メアド・パスワードなしで自動ログイン
-          await signInAnonymously(auth);
-        } catch (e) {
-          console.error('Anonymous Sign-In Error:', e);
-          setAuthReady(true);
-        }
-      }
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthReady(true);
     });
     return unsub;
   }, []);
