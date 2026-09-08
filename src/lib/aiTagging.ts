@@ -2,10 +2,10 @@
 
 const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY || '';
 
-// エージェントごとのOpenRouter指定モデル (:free 枠)
-const MODEL_GAL = 'google/gemini-2.0-flash-exp:free';
-const MODEL_RESEARCHER = 'deepseek/deepseek-r1:free';
-const MODEL_INVESTOR = 'qwen/qwen-2.5-72b-instruct:free';
+// エージェントごとのOpenRouter指定モデル (パターンA: 有料高品質スラグ)
+const MODEL_GAL = 'google/gemini-2.0-flash-exp';
+const MODEL_RESEARCHER = 'deepseek/deepseek-r1';
+const MODEL_INVESTOR = 'qwen/qwen-2.5-72b-instruct';
 
 async function fetchOpenRouter(prompt: string, model: string): Promise<string> {
   if (!OPENROUTER_API_KEY) {
@@ -45,10 +45,25 @@ function parseCommentJson(rawText: string): string {
       return obj.comment || '';
     }
   } catch (e) {
-    // パース失敗時
+    // JSONパース失敗時はフォールバック
   }
   return rawText.trim().replace(/^["'「」]|["'「」]$/g, '');
 }
+
+function extractJsonArray(rawText: string): any[] {
+  try {
+    const clean = rawText.replace(/```json|```/g, '').trim();
+    const match = clean.match(/\[[\s\S]*\]/);
+    if (match) return JSON.parse(match[0]);
+    return JSON.parse(clean);
+  } catch (e) {
+    return [];
+  }
+}
+
+// ----------------------------------------------------
+// プロンプト定義（全文反映）
+// ----------------------------------------------------
 
 const COMMON_PREFIX = `
 # 共通ルール
@@ -81,6 +96,9 @@ const COMMON_PREFIX = `
 {"comment": "ここに一言"}
 `;
 
+/**
+ * ギャル用生成処理
+ */
 export async function generateGyaruComment(content: string): Promise<string> {
   if (!content.trim()) return '';
 
@@ -139,6 +157,9 @@ ${content}
   return await generateWithValidation(prompt, MODEL_GAL);
 }
 
+/**
+ * 研究者用生成処理
+ */
 export async function generateResearcherComment(content: string): Promise<string> {
   if (!content.trim()) return '';
 
@@ -198,6 +219,9 @@ ${content}
   return await generateWithValidation(prompt, MODEL_RESEARCHER);
 }
 
+/**
+ * 投資家用生成処理
+ */
 export async function generateInvestorComment(content: string): Promise<string> {
   if (!content.trim()) return '';
 
@@ -261,6 +285,9 @@ ${content}
   return await generateWithValidation(prompt, MODEL_INVESTOR);
 }
 
+/**
+ * 文字数バリデーション（30〜50文字）＋リトライ処理
+ */
 async function generateWithValidation(prompt: string, model: string): Promise<string> {
   let currentPrompt = prompt;
 
@@ -289,12 +316,23 @@ async function generateWithValidation(prompt: string, model: string): Promise<st
   return parseCommentJson(fallback).slice(0, 50);
 }
 
-// 既存呼び出し（memos.tsx等）との互換用関数定義
+// 他コンポーネント用互換関数
 export async function suggestTagsForMemo(
-  content?: string,
-  existingTags?: string[]
+  content: string = '',
+  existingTags: string[] = []
 ): Promise<string[]> {
-  return [];
+  if (!content.trim()) return [];
+  const prompt = `
+以下の読書メモに適切なタグを2〜5個提案し、JSON文字列配列でのみ返してください。
+既存タグ: ${existingTags.join(', ')}
+メモ: ${content}
+`;
+  try {
+    const raw = await fetchOpenRouter(prompt, MODEL_GAL);
+    return extractJsonArray(raw);
+  } catch (e) {
+    return [];
+  }
 }
 
 export type DuplicateTagGroup = {
@@ -303,7 +341,17 @@ export type DuplicateTagGroup = {
 };
 
 export async function detectDuplicateTags(
-  allTags?: string[]
+  allTags: string[] = []
 ): Promise<DuplicateTagGroup[]> {
-  return [];
+  if (allTags.length < 2) return [];
+  const prompt = `
+以下のタグ一覧から表記揺れ・同義タグを検出し、[{"target":"代表","duplicates":["重複1"]}] のJSON配列のみで返してください。
+タグ: ${allTags.join(', ')}
+`;
+  try {
+    const raw = await fetchOpenRouter(prompt, MODEL_GAL);
+    return extractJsonArray(raw);
+  } catch (e) {
+    return [];
+  }
 }
