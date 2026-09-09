@@ -1,12 +1,10 @@
 // File: src/components/MemoSheet.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, Text, Pressable, ScrollView, Dimensions, ActivityIndicator } from 'react-native';
-import { Sheet, Field, Btn } from './ui';
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { Sheet, Field, Btn, Stars } from './ui';
 import { C, R } from '../lib/theme';
 import { useData } from '../lib/store';
 import { suggestTagsForMemo } from '../lib/aiTagging';
-
-const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 function SpinInput({ label, value, onChange, placeholder }: any) {
   const timerRef = useRef<any>(null);
@@ -50,6 +48,7 @@ export default function MemoSheet({ visible, onClose, memo, bookId }: any) {
   const [insight, setInsight] = useState('');
   const [actionPlan, setActionPlan] = useState('');
   const [tagInput, setTagInput] = useState('');
+  const [rating, setRating] = useState<number>(0);
   const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
@@ -61,11 +60,13 @@ export default function MemoSheet({ visible, onClose, memo, bookId }: any) {
       setInsight(memo.insight || '');
       setActionPlan(memo.actionPlan || '');
       setTagInput(memo.tags ? memo.tags.join(' ') : '');
+      setRating(memo.rating || 0);
     } else {
       setContent('');
       setInsight('');
       setActionPlan('');
       setTagInput('');
+      setRating(0);
       const bookMemos = memos.filter((m) => m.bookId === bookId && !m.deletedAt);
       if (bookMemos.length > 0) {
         const lastMemo = bookMemos.sort((a, b) => b.createdAt - a.createdAt)[0];
@@ -84,7 +85,6 @@ export default function MemoSheet({ visible, onClose, memo, bookId }: any) {
     return Array.from(set);
   }, [memos]);
 
-  // AIによるタグ提案実行
   const handleAiSuggestTags = async () => {
     if (!content.trim()) return;
     setAiLoading(true);
@@ -106,7 +106,7 @@ export default function MemoSheet({ visible, onClose, memo, bookId }: any) {
     const actionPlanVal = actionPlan.trim() || null;
 
     if (memo) {
-      await updateMemo(memo.id, { content, chapter: chapterVal, page: pageVal, insight: insightVal, actionPlan: actionPlanVal, tags });
+      await updateMemo(memo.id, { content, chapter: chapterVal, page: pageVal, insight: insightVal, actionPlan: actionPlanVal, tags, rating: rating as any });
     } else if (bookId) {
       await addMemo({ bookId, content, chapter: chapterVal, page: pageVal, insight: insightVal, actionPlan: actionPlanVal, tags });
     }
@@ -114,18 +114,23 @@ export default function MemoSheet({ visible, onClose, memo, bookId }: any) {
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} title={memo ? 'メモを編集' : '新しいメモ'}>
-      <View style={{ minHeight: SCREEN_HEIGHT * 0.25 }}>
-        <Field label="メモ内容" value={content} onChangeText={setContent} multiline minHeight={SCREEN_HEIGHT * 0.2} />
+    <Sheet visible={visible} onClose={onClose} title={memo ? `📝 メモの編集 (${memo.bookTitle || ''})` : '新しいメモ'}>
+      {/* 評価（★）の選択 */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, backgroundColor: C.card, padding: 10, borderRadius: R.md }}>
+        <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700' }}>評価</Text>
+        <Stars value={rating} onChange={setRating} size={22} />
       </View>
+
+      {/* メモ本文入力欄（広々表示） */}
+      <Field label="メモ内容" value={content} onChangeText={setContent} multiline minHeight={200} placeholder="読書メモや抜粋テキストを入力..." />
 
       <View style={{ flexDirection: 'row', width: '100%' }}>
         <SpinInput label="第◯章" value={chapter} onChange={setChapter} placeholder="例: 1" />
         <SpinInput label="ページ" value={page} onChange={setPage} placeholder="例: 142" />
       </View>
 
-      <Field label="💡 気付き・学び（任意）" value={insight} onChangeText={setInsight} multiline placeholder="このメモから感じたことや発見" />
-      <Field label="🎯 アクションプラン（任意）" value={actionPlan} onChangeText={setActionPlan} multiline placeholder="明日から実践すること・行動" />
+      <Field label="💡 気付き・学び（任意）" value={insight} onChangeText={setInsight} multiline minHeight={70} placeholder="このメモから感じたことや発見" />
+      <Field label="🎯 アクションプラン（任意）" value={actionPlan} onChangeText={setActionPlan} multiline minHeight={70} placeholder="明日から実践すること・行動" />
 
       {/* タグ入力 ＆ ✨ AIタグ生成ボタン */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -159,7 +164,7 @@ export default function MemoSheet({ visible, onClose, memo, bookId }: any) {
 
       <Field label="" value={tagInput} onChangeText={setTagInput} placeholder="例: 経済学 マクロ" />
 
-      <Btn label="保存" icon="checkmark" onPress={handleSave} />
+      <Btn label="保存" icon="checkmark" onPress={handleSave} style={{ marginTop: 8 }} />
       {memo && (
         <Btn label="削除" kind="danger" icon="trash-outline" style={{ marginTop: 10 }} onPress={async () => { await updateMemo(memo.id, { deletedAt: Date.now() }); onClose(); }} />
       )}

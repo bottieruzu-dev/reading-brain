@@ -1,9 +1,10 @@
 // File: src/app/(tabs)/memos.tsx
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Btn, Card, Chip, Empty, Field, Press, Screen, SearchBar, Sheet, Stars, Title, useToast } from '../../components/ui';
+import { Btn, Card, Chip, Empty, Field, Press, Screen, SearchBar, Sheet, Title, useToast } from '../../components/ui';
 import MemoCard from '../../components/MemoCard';
+import MemoSheet from '../../components/MemoSheet';
 import { C, R } from '../../lib/theme';
 import { useData } from '../../lib/store';
 import {
@@ -21,8 +22,8 @@ export default function CrossMemos() {
   const [tag, setTag] = useState('');
   const [selectedGenreId, setSelectedGenreId] = useState<string | null>(null);
   const [star, setStar] = useState(0);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
+  const [editingMemo, setEditingMemo] = useState<any>(null);
+  const [memoOpen, setMemoOpen] = useState(false);
   const [genreManageOpen, setGenreManageOpen] = useState(false);
 
   // 一括生成用の状態管理
@@ -67,7 +68,6 @@ export default function CrossMemos() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
 
-  // ギャル・研究者・投資家の共通一括生成ハンドラー
   const handleBulkGenerate = async (type: 'gyaru' | 'researcher' | 'investor') => {
     let targets: typeof alive = [];
     if (type === 'gyaru') targets = unGyaruMemos;
@@ -143,7 +143,6 @@ export default function CrossMemos() {
           <View style={{ marginHorizontal: -20 }}>
             <Title sub={`${list.length}件 / 全${alive.length}件`}>横断メモ</Title>
 
-            {/* 一括生成ボタン＆ジャンル管理ボタンのバー */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -250,7 +249,6 @@ export default function CrossMemos() {
               </Press>
             </ScrollView>
 
-            {/* 一括処理中のリアルタイムプログレス表示カード */}
             {bulkProgress && (
               <View
                 style={{
@@ -327,33 +325,23 @@ export default function CrossMemos() {
           </View>
         }
         ListEmptyComponent={<Empty emoji="🔎" title="該当するメモがありません" sub="条件を外すか、本棚からメモを追加してください。" />}
-        renderItem={({ item }) =>
-          openId === item.id ? (
-            <Card style={{ marginBottom: 10 }}>
-              <Text style={{ color: C.cyan, fontSize: 11, fontWeight: '800', marginBottom: 8 }}>{item.bookTitle}</Text>
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                multiline
-                style={{ color: C.text, fontSize: 14.5, lineHeight: 21, minHeight: 110, textAlignVertical: 'top' }}
-              />
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
-                <Stars value={item.rating} onChange={(n: number) => updateMemo(item.id, { rating: n as any })} size={20} />
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => setOpenId(null)}>
-                    <Text style={{ color: C.sub, fontWeight: '800', padding: 8 }}>閉じる</Text>
-                  </Pressable>
-                  <Btn label="保存" onPress={async () => {
-                    await updateMemo(item.id, { content: draft });
-                    setOpenId(null); toast.show('保存しました');
-                  }} />
-                </View>
-              </View>
-            </Card>
-          ) : (
-            <MemoCard memo={item} showBook onPress={() => { setOpenId(item.id); setDraft(item.content); }} />
-          )
-        }
+        renderItem={({ item }) => (
+          <MemoCard
+            memo={item}
+            showBook
+            onPress={() => {
+              setEditingMemo(item);
+              setMemoOpen(true);
+            }}
+          />
+        )}
+      />
+
+      <MemoSheet
+        visible={memoOpen}
+        onClose={() => setMemoOpen(false)}
+        memo={editingMemo}
+        bookId={editingMemo?.bookId}
       />
 
       <GenreManageSheet visible={genreManageOpen} onClose={() => setGenreManageOpen(false)} tagsWithCount={tagsWithCount} />

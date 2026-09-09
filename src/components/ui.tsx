@@ -138,7 +138,7 @@ export function Stars({ value, onChange, size = 18 }: any) {
 
 export function Sheet({ visible, onClose, title, children }: any) {
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={s.mask}>
         <View style={s.sheet}>
           <View style={s.sheetHead}>
@@ -147,7 +147,7 @@ export function Sheet({ visible, onClose, title, children }: any) {
               <Ionicons name="close" size={22} color={C.sub} />
             </Pressable>
           </View>
-          <ScrollView style={{ maxHeight: 520 }} keyboardShouldPersistTaps="handled">
+          <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
             {children}
           </ScrollView>
         </View>
@@ -192,8 +192,8 @@ const s = StyleSheet.create({
   label: { color: C.sub, fontSize: 12, marginBottom: 6, fontWeight: '700' },
   input: { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: C.line, borderRadius: R.md, color: C.text, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 },
   search: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: C.line, borderRadius: R.pill, paddingHorizontal: 14, height: 42, marginHorizontal: 20, marginBottom: 12 },
-  mask: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#15132B', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 32, borderTopWidth: 1, borderColor: C.line },
+  mask: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  sheet: { backgroundColor: '#15132B', borderRadius: 20, padding: 20, width: '100%', maxWidth: 680, maxHeight: '85%', borderWidth: 1, borderColor: C.line },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   sheetTitle: { color: C.text, fontSize: 18, fontWeight: '900' },
   toast: { position: 'absolute', bottom: 96, alignSelf: 'center', backgroundColor: C.cyan, paddingHorizontal: 18, paddingVertical: 11, borderRadius: R.pill, left: 0, right: 0, marginHorizontal: 60, alignItems: 'center' },
