@@ -1481,407 +1481,6 @@ export function computeStreak(reviews: ReviewLog[], now: number = Date.now()): n
 }
 </file>
 
-<file path="src/lib/store.tsx">
-// File: src/lib/store.tsx
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut as fbSignOut,
-  type User,
-} from 'firebase/auth';
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  limit as qLimit,
-  onSnapshot,
-  orderBy,
-  query,
-  setDoc,
-  updateDoc,
-  writeBatch,
-} from 'firebase/firestore';
-import { auth, db } from './firebase';
-import { initialSchedule, nextSchedule } from './srs';
-import type { Book, Genre, Memo, Rating, ReviewLog, Status, Template } from './types';
-
-const DEFAULT_TEMPLATES = [
-  {
-    name: '3行要約＋アクション',
-    body:
-      'あなたは優秀な編集者です。以下は書籍『{タイトル}』（著者: {著者}）から私が抜き出したメモです。\n\n{選択したメモ}\n\n上記を踏まえ、次の形式で日本語で出力してください。\n1. 3行要約\n2. 最も重要な洞察を1つ（なぜ重要かの根拠付き）\n3. 明日から実行できる具体的アクション3つ',
-  },
-  {
-    name: '反論・穴探し（厳しめ）',
-    body:
-      '以下のメモの主張について、論理の飛躍・反証となるデータ・前提の弱さを厳しく指摘してください。擁護や励ましは不要です。\n\n{選択したメモ}\n\n出力形式:\n1. 主張の要約\n2. 反論3つ（それぞれ根拠を明記）\n3. それでも妥当と言える部分',
-  },
-  {
-    name: '動画台本のネタ化',
-    body:
-      '以下のメモを、視聴者が最後まで見たくなる10分程度の動画構成案に変換してください。\n\n{選択したメモ}\n\n出力: フック(最初の15秒の台詞案)/本編3ブロック(各見出しと要点)/締めのメッセージ/サムネ文言案5つ',
-  },
-  {
-    name: 'ソクラテス式チェック',
-    body:
-      '以下のメモの理解度を確かめるため、私に問いかける質問を10個作ってください。答えは絶対に書かないでください。\n\n{選択したメモ}',
-  },
-];
-
-type Ctx = {
-  user: User | null;
-  authReady: boolean;
-  loaded: boolean;
-  books: Book[];
-  memos: Memo[];
-  templates: Template[];
-  reviews: ReviewLog[];
-  genres: Genre[];
-  signIn: (email: string, pass: string) => Promise<void>;
-  signOut: () => Promise<void>;
-  addBook: (v: Partial<Book>) => Promise<string>;
-  updateBook: (id: string, v: Partial<Book>) => Promise<void>;
-  trashBook: (id: string) => Promise<void>;
-  restoreBook: (id: string) => Promise<void>;
-  addMemo: (v: Partial<Memo> & { bookId: string }) => Promise<void>;
-  updateMemo: (id: string, v: Partial<Memo>) => Promise<void>;
-  trashMemo: (id: string) => Promise<void>;
-  restoreMemo: (id: string) => Promise<void>;
-  hardDelete: (kind: 'books' | 'memos', id: string) => Promise<void>;
-  moveMemo: (id: string, newOrder: number) => Promise<void>;
-  reviewMemo: (memo: Memo, rating: 1 | 2 | 3) => Promise<void>;
-  addTemplate: (name: string, body: string) => Promise<void>;
-  updateTemplate: (id: string, v: Partial<Template>) => Promise<void>;
-  deleteTemplate: (id: string) => Promise<void>;
-  addGenre: (name: string, tagNames?: string[]) => Promise<string>;
-  updateGenre: (id: string, v: Partial<Genre>) => Promise<void>;
-  deleteGenre: (id: string) => Promise<void>;
-  addTagsToGenre: (genreId: string, tagsToAdd: string[]) => Promise<void>;
-  mergeTags: (targetTag: string, duplicateTags: string[]) => Promise<void>;
-  exportJson: () => string;
-  importJson: (raw: string) => Promise<number>;
-};
-
-const DataCtx = createContext<Ctx>({} as Ctx);
-export const useData = () => useContext(DataCtx);
-
-export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-  const [books, setBooks] = useState<Book[]>([]);
-  const [memos, setMemos] = useState<Memo[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [reviews, setReviews] = useState<ReviewLog[]>([]);
-  const [genres, setGenres] = useState<Genre[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [seedChecked, setSeedChecked] = useState(false);
-
-  useEffect(() => onAuthStateChanged(auth, (u) => { setUser(u); setAuthReady(true); }), []);
-
-  const uid = user?.uid;
-  const col = (sub: string) => collection(db, 'users', uid as string, sub);
-
-  useEffect(() => {
-    if (!uid) {
-      setBooks([]); setMemos([]); setTemplates([]); setReviews([]); setGenres([]);
-      setLoaded(false); setSeedChecked(false);
-      return;
-    }
-    const unsubs = [
-      onSnapshot(collection(db, 'users', uid, 'books'), (s) =>
-        setBooks(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
-      ),
-      onSnapshot(collection(db, 'users', uid, 'memos'), (s) => {
-        setMemos(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
-        setLoaded(true);
-      }),
-      onSnapshot(collection(db, 'users', uid, 'templates'), (s) =>
-        setTemplates(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
-      ),
-      onSnapshot(collection(db, 'users', uid, 'genres'), (s) =>
-        setGenres(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
-      ),
-      onSnapshot(
-        query(collection(db, 'users', uid, 'reviews'), orderBy('reviewedAt', 'desc'), qLimit(500)),
-        (s) => setReviews(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
-      ),
-    ];
-    return () => unsubs.forEach((f) => f());
-  }, [uid]);
-
-  useEffect(() => {
-    if (!uid || seedChecked) return;
-    (async () => {
-      const snap = await getDocs(collection(db, 'users', uid, 'templates'));
-      if (snap.empty) {
-        const now = Date.now();
-        const batch = writeBatch(db);
-        DEFAULT_TEMPLATES.forEach((t) => {
-          const ref = doc(collection(db, 'users', uid, 'templates'));
-          batch.set(ref, { ...t, usageCount: 0, createdAt: now, updatedAt: now });
-        });
-        await batch.commit();
-      }
-      setSeedChecked(true);
-    })();
-  }, [uid, seedChecked]);
-
-  const api: Ctx = useMemo(() => ({
-    user, authReady, loaded, books, memos, templates, reviews, genres,
-
-    signIn: async (email, pass) => { await signInWithEmailAndPassword(auth, email.trim(), pass); },
-    signOut: async () => { await fbSignOut(auth); },
-
-    addBook: async (v) => {
-      const now = Date.now();
-      const maxOrder = books.reduce((m, b) => Math.max(m, b.order || 0), 0);
-      const ref = await addDoc(col('books'), {
-        title: v.title || '無題',
-        author: v.author || '',
-        coverUrl: v.coverUrl || null,
-        status: (v.status || 'unread') as Status,
-        tags: v.tags || [],
-        order: maxOrder + 1000,
-        deletedAt: null,
-        createdAt: now,
-        updatedAt: now,
-      });
-      return ref.id;
-    },
-
-    updateBook: async (id, v) => {
-      const now = Date.now();
-      await updateDoc(doc(db, 'users', uid as string, 'books', id), { ...v, updatedAt: now });
-      if (v.title) {
-        const targets = memos.filter((m) => m.bookId === id && m.bookTitle !== v.title);
-        for (let i = 0; i < targets.length; i += 400) {
-          const batch = writeBatch(db);
-          targets.slice(i, i + 400).forEach((m) =>
-            batch.update(doc(db, 'users', uid as string, 'memos', m.id), {
-              bookTitle: v.title, updatedAt: now,
-            })
-          );
-          await batch.commit();
-        }
-      }
-    },
-
-    trashBook: async (id) => {
-      const now = Date.now();
-      const batch = writeBatch(db);
-      batch.update(doc(db, 'users', uid as string, 'books', id), { deletedAt: now, updatedAt: now });
-      memos.filter((m) => m.bookId === id && !m.deletedAt).slice(0, 400).forEach((m) =>
-        batch.update(doc(db, 'users', uid as string, 'memos', m.id), { deletedAt: now, updatedAt: now })
-      );
-      await batch.commit();
-    },
-
-    restoreBook: async (id) => {
-      await updateDoc(doc(db, 'users', uid as string, 'books', id), { deletedAt: null, updatedAt: Date.now() });
-    },
-
-    addMemo: async (v) => {
-      const now = Date.now();
-      const book = books.find((b) => b.id === v.bookId);
-      const minOrder = memos
-        .filter((m) => m.bookId === v.bookId)
-        .reduce((m, x) => Math.min(m, x.order || 0), 1000);
-      await addDoc(col('memos'), {
-        bookId: v.bookId,
-        bookTitle: book?.title || '',
-        content: v.content || '',
-        page: v.page || null,
-        chapter: v.chapter || null,
-        insight: v.insight || null,
-        actionPlan: v.actionPlan || null,
-        tags: v.tags || [],
-        order: minOrder - 1000,
-        ...initialSchedule(now),
-        deletedAt: null,
-        createdAt: now,
-        updatedAt: now,
-      });
-    },
-
-    updateMemo: async (id, v) => {
-      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { ...v, updatedAt: Date.now() });
-    },
-
-    trashMemo: async (id) => {
-      const now = Date.now();
-      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { deletedAt: now, updatedAt: now });
-    },
-
-    restoreMemo: async (id) => {
-      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { deletedAt: null, updatedAt: Date.now() });
-    },
-
-    hardDelete: async (kind, id) => {
-      await deleteDoc(doc(db, 'users', uid as string, kind, id));
-    },
-
-    moveMemo: async (id, newOrder) => {
-      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { order: newOrder, updatedAt: Date.now() });
-    },
-
-    reviewMemo: async (memo, rating) => {
-      const now = Date.now();
-      const sched = nextSchedule(memo, rating, now);
-      const batch = writeBatch(db);
-      batch.update(doc(db, 'users', uid as string, 'memos', memo.id), sched as any);
-      batch.set(doc(collection(db, 'users', uid as string, 'reviews')), {
-        memoId: memo.id,
-        rating,
-        reviewedAt: now,
-        intervalBefore: memo.intervalDays || 0,
-        intervalAfter: sched.intervalDays,
-      });
-      await batch.commit();
-    },
-
-    addTemplate: async (name, body) => {
-      const now = Date.now();
-      await addDoc(col('templates'), { name, body, usageCount: 0, createdAt: now, updatedAt: now });
-    },
-
-    updateTemplate: async (id, v) => {
-      await updateDoc(doc(db, 'users', uid as string, 'templates', id), { ...v, updatedAt: Date.now() });
-    },
-
-    deleteTemplate: async (id) => {
-      await deleteDoc(doc(db, 'users', uid as string, 'templates', id));
-    },
-
-    addGenre: async (name, tagNames = []) => {
-      const now = Date.now();
-      const ref = await addDoc(col('genres'), { name: name.trim(), tagNames, createdAt: now, updatedAt: now });
-      return ref.id;
-    },
-
-    updateGenre: async (id, v) => {
-      await updateDoc(doc(db, 'users', uid as string, 'genres', id), { ...v, updatedAt: Date.now() });
-    },
-
-    deleteGenre: async (id) => {
-      await deleteDoc(doc(db, 'users', uid as string, 'genres', id));
-    },
-
-    addTagsToGenre: async (genreId, tagsToAdd) => {
-      const target = genres.find((g) => g.id === genreId);
-      if (!target) return;
-      const set = new Set(target.tagNames || []);
-      tagsToAdd.forEach((t) => set.add(t));
-      await updateDoc(doc(db, 'users', uid as string, 'genres', genreId), {
-        tagNames: Array.from(set),
-        updatedAt: Date.now(),
-      });
-    },
-
-    mergeTags: async (targetTag, duplicateTags) => {
-      if (!duplicateTags.length || !uid) return;
-      const now = Date.now();
-      const dupSet = new Set(duplicateTags);
-
-      // 1. Memos のタグ置換
-      const targetMemos = memos.filter((m) =>
-        (m.tags || []).some((t) => dupSet.has(t))
-      );
-      for (let i = 0; i < targetMemos.length; i += 400) {
-        const batch = writeBatch(db);
-        targetMemos.slice(i, i + 400).forEach((m) => {
-          const newTags = Array.from(
-            new Set((m.tags || []).map((t) => (dupSet.has(t) ? targetTag : t)))
-          );
-          batch.update(doc(db, 'users', uid, 'memos', m.id), {
-            tags: newTags,
-            updatedAt: now,
-          });
-        });
-        await batch.commit();
-      }
-
-      // 2. Books のタグ置換
-      const targetBooks = books.filter((b) =>
-        (b.tags || []).some((t) => dupSet.has(t))
-      );
-      for (let i = 0; i < targetBooks.length; i += 400) {
-        const batch = writeBatch(db);
-        targetBooks.slice(i, i + 400).forEach((b) => {
-          const newTags = Array.from(
-            new Set((b.tags || []).map((t) => (dupSet.has(t) ? targetTag : t)))
-          );
-          batch.update(doc(db, 'users', uid, 'books', b.id), {
-            tags: newTags,
-            updatedAt: now,
-          });
-        });
-        await batch.commit();
-      }
-
-      // 3. Genres のタグ置換
-      const targetGenres = genres.filter((g) =>
-        (g.tagNames || []).some((t) => dupSet.has(t))
-      );
-      for (let i = 0; i < targetGenres.length; i += 400) {
-        const batch = writeBatch(db);
-        targetGenres.slice(i, i + 400).forEach((g) => {
-          const newTags = Array.from(
-            new Set((g.tagNames || []).map((t) => (dupSet.has(t) ? targetTag : t)))
-          );
-          batch.update(doc(db, 'users', uid, 'genres', g.id), {
-            tagNames: newTags,
-            updatedAt: now,
-          });
-        });
-        await batch.commit();
-      }
-    },
-
-    exportJson: () =>
-      JSON.stringify({ version: 1, exportedAt: Date.now(), books, memos, templates, genres }, null, 2),
-
-    importJson: async (raw) => {
-      const data = JSON.parse(raw);
-      const rows: Array<[string, any]> = [];
-      (data.books || []).forEach((b: Book) => rows.push(['books', b]));
-      (data.memos || []).forEach((m: Memo) => rows.push(['memos', m]));
-      (data.templates || []).forEach((t: Template) => rows.push(['templates', t]));
-      (data.genres || []).forEach((g: Genre) => rows.push(['genres', g]));
-      for (let i = 0; i < rows.length; i += 400) {
-        const batch = writeBatch(db);
-        rows.slice(i, i + 400).forEach(([kind, row]) => {
-          const { id, ...rest } = row;
-          batch.set(doc(db, 'users', uid as string, kind, id), rest, { merge: true });
-        });
-        await batch.commit();
-      }
-      return rows.length;
-    },
-  }), [user, authReady, loaded, books, memos, templates, reviews, genres, uid]);
-
-  return <DataCtx.Provider value={api}>{children}</DataCtx.Provider>;
-}
-
-export function uniqueTags(list: Array<{ tags?: string[] }>): string[] {
-  const set = new Set<string>();
-  list.forEach((x) => (x.tags || []).forEach((t) => t && set.add(t)));
-  return Array.from(set).sort();
-}
-
-export function parseTags(input: string): string[] {
-  return input
-    .split(/[,、\s]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 12);
-}
-
-export type { Rating };
-</file>
-
 <file path="AGENTS.md">
 # Expo HAS CHANGED
 
@@ -2783,6 +2382,411 @@ export default function MemoCard({ memo, onPress, showBook }: any) {
 }
 </file>
 
+<file path="src/lib/store.tsx">
+// File: src/lib/store.tsx
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut as fbSignOut,
+  type User,
+} from 'firebase/auth';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  limit as qLimit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  writeBatch,
+} from 'firebase/firestore';
+import { auth, db } from './firebase';
+import { initialSchedule, nextSchedule } from './srs';
+import type { Book, Genre, Memo, Rating, ReviewLog, Status, Template } from './types';
+
+const DEFAULT_TEMPLATES = [
+  {
+    name: '3行要約＋アクション',
+    body:
+      'あなたは優秀な編集者です。以下は書籍『{タイトル}』（著者: {著者}）から私が抜き出したメモです。\n\n{選択したメモ}\n\n上記を踏まえ、次の形式で日本語で出力してください。\n1. 3行要約\n2. 最も重要な洞察を1つ（なぜ重要かの根拠付き）\n3. 明日から実行できる具体的アクション3つ',
+  },
+  {
+    name: '反論・穴探し（厳しめ）',
+    body:
+      '以下のメモの主張について、論理の飛躍・反証となるデータ・前提の弱さを厳しく指摘してください。擁護や励ましは不要です。\n\n{選択したメモ}\n\n出力形式:\n1. 主張の要約\n2. 反論3つ（それぞれ根拠を明記）\n3. それでも妥当と言える部分',
+  },
+  {
+    name: '動画台本のネタ化',
+    body:
+      '以下のメモを、視聴者が最後まで見たくなる10分程度の動画構成案に変換してください。\n\n{選択したメモ}\n\n出力: フック(最初の15秒の台詞案)/本編3ブロック(各見出しと要点)/締めのメッセージ/サムネ文言案5つ',
+  },
+  {
+    name: 'ソクラテス式チェック',
+    body:
+      '以下のメモの理解度を確かめるため、私に問いかける質問を10個作ってください。答えは絶対に書かないでください。\n\n{選択したメモ}',
+  },
+];
+
+type Ctx = {
+  user: User | null;
+  authReady: boolean;
+  loaded: boolean;
+  books: Book[];
+  memos: Memo[];
+  templates: Template[];
+  reviews: ReviewLog[];
+  genres: Genre[];
+  signIn: (email: string, pass: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  addBook: (v: Partial<Book>) => Promise<string>;
+  updateBook: (id: string, v: Partial<Book>) => Promise<void>;
+  trashBook: (id: string) => Promise<void>;
+  restoreBook: (id: string) => Promise<void>;
+  addMemo: (v: Partial<Memo> & { bookId: string }) => Promise<void>;
+  updateMemo: (id: string, v: Partial<Memo>) => Promise<void>;
+  trashMemo: (id: string) => Promise<void>;
+  restoreMemo: (id: string) => Promise<void>;
+  hardDelete: (kind: 'books' | 'memos', id: string) => Promise<void>;
+  moveMemo: (id: string, newOrder: number) => Promise<void>;
+  reviewMemo: (memo: Memo, rating: 1 | 2 | 3) => Promise<void>;
+  addTemplate: (name: string, body: string) => Promise<void>;
+  updateTemplate: (id: string, v: Partial<Template>) => Promise<void>;
+  deleteTemplate: (id: string) => Promise<void>;
+  addGenre: (name: string, tagNames?: string[]) => Promise<string>;
+  updateGenre: (id: string, v: Partial<Genre>) => Promise<void>;
+  deleteGenre: (id: string) => Promise<void>;
+  addTagsToGenre: (genreId: string, tagsToAdd: string[]) => Promise<void>;
+  mergeTags: (targetTag: string, duplicateTags: string[]) => Promise<void>;
+  exportJson: () => string;
+  importJson: (raw: string) => Promise<number>;
+};
+
+const DataCtx = createContext<Ctx>({} as Ctx);
+export const useData = () => useContext(DataCtx);
+
+export function DataProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [memos, setMemos] = useState<Memo[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [reviews, setReviews] = useState<ReviewLog[]>([]);
+  const [genres, setGenres] = useState<Genre[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [seedChecked, setSeedChecked] = useState(false);
+
+  // 認証状態の監視のみ（自動匿名ログイン処理を撤去）
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthReady(true);
+    });
+    return unsub;
+  }, []);
+
+  const uid = user?.uid;
+  const col = (sub: string) => collection(db, 'users', uid as string, sub);
+
+  useEffect(() => {
+    if (!uid) {
+      setBooks([]); setMemos([]); setTemplates([]); setReviews([]); setGenres([]);
+      setLoaded(false); setSeedChecked(false);
+      return;
+    }
+    const unsubs = [
+      onSnapshot(collection(db, 'users', uid, 'books'), (s) =>
+        setBooks(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+      ),
+      onSnapshot(collection(db, 'users', uid, 'memos'), (s) => {
+        setMemos(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+        setLoaded(true);
+      }),
+      onSnapshot(collection(db, 'users', uid, 'templates'), (s) =>
+        setTemplates(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+      ),
+      onSnapshot(collection(db, 'users', uid, 'genres'), (s) =>
+        setGenres(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+      ),
+      onSnapshot(
+        query(collection(db, 'users', uid, 'reviews'), orderBy('reviewedAt', 'desc'), qLimit(500)),
+        (s) => setReviews(s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+      ),
+    ];
+    return () => unsubs.forEach((f) => f());
+  }, [uid]);
+
+  useEffect(() => {
+    if (!uid || seedChecked) return;
+    (async () => {
+      const snap = await getDocs(collection(db, 'users', uid, 'templates'));
+      if (snap.empty) {
+        const now = Date.now();
+        const batch = writeBatch(db);
+        DEFAULT_TEMPLATES.forEach((t) => {
+          const ref = doc(collection(db, 'users', uid, 'templates'));
+          batch.set(ref, { ...t, usageCount: 0, createdAt: now, updatedAt: now });
+        });
+        await batch.commit();
+      }
+      setSeedChecked(true);
+    })();
+  }, [uid, seedChecked]);
+
+  const api: Ctx = useMemo(() => ({
+    user, authReady, loaded, books, memos, templates, reviews, genres,
+
+    signIn: async (email, pass) => { await signInWithEmailAndPassword(auth, email.trim(), pass); },
+    signOut: async () => { await fbSignOut(auth); },
+
+    addBook: async (v) => {
+      const now = Date.now();
+      const maxOrder = books.reduce((m, b) => Math.max(m, b.order || 0), 0);
+      const ref = await addDoc(col('books'), {
+        title: v.title || '無題',
+        author: v.author || '',
+        coverUrl: v.coverUrl || null,
+        status: (v.status || 'unread') as Status,
+        tags: v.tags || [],
+        order: maxOrder + 1000,
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return ref.id;
+    },
+
+    updateBook: async (id, v) => {
+      const now = Date.now();
+      await updateDoc(doc(db, 'users', uid as string, 'books', id), { ...v, updatedAt: now });
+      if (v.title) {
+        const targets = memos.filter((m) => m.bookId === id && m.bookTitle !== v.title);
+        for (let i = 0; i < targets.length; i += 400) {
+          const batch = writeBatch(db);
+          targets.slice(i, i + 400).forEach((m) =>
+            batch.update(doc(db, 'users', uid as string, 'memos', m.id), {
+              bookTitle: v.title, updatedAt: now,
+            })
+          );
+          await batch.commit();
+        }
+      }
+    },
+
+    trashBook: async (id) => {
+      const now = Date.now();
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'users', uid as string, 'books', id), { deletedAt: now, updatedAt: now });
+      memos.filter((m) => m.bookId === id && !m.deletedAt).slice(0, 400).forEach((m) =>
+        batch.update(doc(db, 'users', uid as string, 'memos', m.id), { deletedAt: now, updatedAt: now })
+      );
+      await batch.commit();
+    },
+
+    restoreBook: async (id) => {
+      await updateDoc(doc(db, 'users', uid as string, 'books', id), { deletedAt: null, updatedAt: Date.now() });
+    },
+
+    addMemo: async (v) => {
+      const now = Date.now();
+      const book = books.find((b) => b.id === v.bookId);
+      const minOrder = memos
+        .filter((m) => m.bookId === v.bookId)
+        .reduce((m, x) => Math.min(m, x.order || 0), 1000);
+      await addDoc(col('memos'), {
+        bookId: v.bookId,
+        bookTitle: book?.title || '',
+        content: v.content || '',
+        page: v.page || null,
+        chapter: v.chapter || null,
+        insight: v.insight || null,
+        actionPlan: v.actionPlan || null,
+        tags: v.tags || [],
+        order: minOrder - 1000,
+        ...initialSchedule(now),
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    },
+
+    updateMemo: async (id, v) => {
+      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { ...v, updatedAt: Date.now() });
+    },
+
+    trashMemo: async (id) => {
+      const now = Date.now();
+      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { deletedAt: now, updatedAt: now });
+    },
+
+    restoreMemo: async (id) => {
+      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { deletedAt: null, updatedAt: Date.now() });
+    },
+
+    hardDelete: async (kind, id) => {
+      await deleteDoc(doc(db, 'users', uid as string, kind, id));
+    },
+
+    moveMemo: async (id, newOrder) => {
+      await updateDoc(doc(db, 'users', uid as string, 'memos', id), { order: newOrder, updatedAt: Date.now() });
+    },
+
+    reviewMemo: async (memo, rating) => {
+      const now = Date.now();
+      const sched = nextSchedule(memo, rating, now);
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'users', uid as string, 'memos', memo.id), sched as any);
+      batch.set(doc(collection(db, 'users', uid as string, 'reviews')), {
+        memoId: memo.id,
+        rating,
+        reviewedAt: now,
+        intervalBefore: memo.intervalDays || 0,
+        intervalAfter: sched.intervalDays,
+      });
+      await batch.commit();
+    },
+
+    addTemplate: async (name, body) => {
+      const now = Date.now();
+      await addDoc(col('templates'), { name, body, usageCount: 0, createdAt: now, updatedAt: now });
+    },
+
+    updateTemplate: async (id, v) => {
+      await updateDoc(doc(db, 'users', uid as string, 'templates', id), { ...v, updatedAt: Date.now() });
+    },
+
+    deleteTemplate: async (id) => {
+      await deleteDoc(doc(db, 'users', uid as string, 'templates', id));
+    },
+
+    addGenre: async (name, tagNames = []) => {
+      const now = Date.now();
+      const ref = await addDoc(col('genres'), { name: name.trim(), tagNames, createdAt: now, updatedAt: now });
+      return ref.id;
+    },
+
+    updateGenre: async (id, v) => {
+      await updateDoc(doc(db, 'users', uid as string, 'genres', id), { ...v, updatedAt: Date.now() });
+    },
+
+    deleteGenre: async (id) => {
+      await deleteDoc(doc(db, 'users', uid as string, 'genres', id));
+    },
+
+    addTagsToGenre: async (genreId, tagsToAdd) => {
+      const target = genres.find((g) => g.id === genreId);
+      if (!target) return;
+      const set = new Set(target.tagNames || []);
+      tagsToAdd.forEach((t) => set.add(t));
+      await updateDoc(doc(db, 'users', uid as string, 'genres', genreId), {
+        tagNames: Array.from(set),
+        updatedAt: Date.now(),
+      });
+    },
+
+    mergeTags: async (targetTag, duplicateTags) => {
+      if (!duplicateTags.length || !uid) return;
+      const now = Date.now();
+      const dupSet = new Set(duplicateTags);
+
+      const targetMemos = memos.filter((m) =>
+        (m.tags || []).some((t) => dupSet.has(t))
+      );
+      for (let i = 0; i < targetMemos.length; i += 400) {
+        const batch = writeBatch(db);
+        targetMemos.slice(i, i + 400).forEach((m) => {
+          const newTags = Array.from(
+            new Set((m.tags || []).map((t) => (dupSet.has(t) ? targetTag : t)))
+          );
+          batch.update(doc(db, 'users', uid, 'memos', m.id), {
+            tags: newTags,
+            updatedAt: now,
+          });
+        });
+        await batch.commit();
+      }
+
+      const targetBooks = books.filter((b) =>
+        (b.tags || []).some((t) => dupSet.has(t))
+      );
+      for (let i = 0; i < targetBooks.length; i += 400) {
+        const batch = writeBatch(db);
+        targetBooks.slice(i, i + 400).forEach((b) => {
+          const newTags = Array.from(
+            new Set((b.tags || []).map((t) => (dupSet.has(t) ? targetTag : t)))
+          );
+          batch.update(doc(db, 'users', uid, 'books', b.id), {
+            tags: newTags,
+            updatedAt: now,
+          });
+        });
+        await batch.commit();
+      }
+
+      const targetGenres = genres.filter((g) =>
+        (g.tagNames || []).some((t) => dupSet.has(t))
+      );
+      for (let i = 0; i < targetGenres.length; i += 400) {
+        const batch = writeBatch(db);
+        targetGenres.slice(i, i + 400).forEach((g) => {
+          const newTags = Array.from(
+            new Set((g.tagNames || []).map((t) => (dupSet.has(t) ? targetTag : t)))
+          );
+          batch.update(doc(db, 'users', uid, 'genres', g.id), {
+            tagNames: newTags,
+            updatedAt: now,
+          });
+        });
+        await batch.commit();
+      }
+    },
+
+    exportJson: () =>
+      JSON.stringify({ version: 1, exportedAt: Date.now(), books, memos, templates, genres }, null, 2),
+
+    importJson: async (raw) => {
+      const data = JSON.parse(raw);
+      const rows: Array<[string, any]> = [];
+      (data.books || []).forEach((b: Book) => rows.push(['books', b]));
+      (data.memos || []).forEach((m: Memo) => rows.push(['memos', m]));
+      (data.templates || []).forEach((t: Template) => rows.push(['templates', t]));
+      (data.genres || []).forEach((g: Genre) => rows.push(['genres', g]));
+      for (let i = 0; i < rows.length; i += 400) {
+        const batch = writeBatch(db);
+        rows.slice(i, i + 400).forEach(([kind, row]) => {
+          const { id, ...rest } = row;
+          batch.set(doc(db, 'users', uid as string, kind, id), rest, { merge: true });
+        });
+        await batch.commit();
+      }
+      return rows.length;
+    },
+  }), [user, authReady, loaded, books, memos, templates, reviews, genres, uid]);
+
+  return <DataCtx.Provider value={api}>{children}</DataCtx.Provider>;
+}
+
+export function uniqueTags(list: Array<{ tags?: string[] }>): string[] {
+  const set = new Set<string>();
+  list.forEach((x) => (x.tags || []).forEach((t) => t && set.add(t)));
+  return Array.from(set).sort();
+}
+
+export function parseTags(input: string): string[] {
+  return input
+    .split(/[,、\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+export type { Rating };
+</file>
+
 <file path="src/lib/types.ts">
 // File: src/lib/types.ts
 export type Status = 'wish' | 'unread' | 'reading' | 'done';
@@ -2865,7 +2869,13 @@ import { Btn, Card, Chip, Empty, Field, Press, Screen, SearchBar, Sheet, Stars, 
 import MemoCard from '../../components/MemoCard';
 import { C, R } from '../../lib/theme';
 import { useData } from '../../lib/store';
-import { detectDuplicateTags, DuplicateTagGroup, generateGyaruComment } from '../../lib/aiTagging';
+import {
+  detectDuplicateTags,
+  DuplicateTagGroup,
+  generateGyaruComment,
+  generateInvestorComment,
+  generateResearcherComment,
+} from '../../lib/aiTagging';
 
 export default function CrossMemos() {
   const { memos, updateMemo, genres } = useData();
@@ -2877,10 +2887,20 @@ export default function CrossMemos() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [genreManageOpen, setGenreManageOpen] = useState(false);
-  const [bulkGyaruLoading, setBulkGyaruLoading] = useState(false);
+
+  // 一括生成用の状態管理
+  const [bulkLoadingType, setBulkLoadingType] = useState<'gyaru' | 'researcher' | 'investor' | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{
+    current: number;
+    total: number;
+    percent: number;
+    label: string;
+  } | null>(null);
 
   const alive = memos.filter((m) => !m.deletedAt);
   const unGyaruMemos = alive.filter((m) => !m.gyaruComment && !!m.content.trim());
+  const unResearcherMemos = alive.filter((m) => !m.researcherComment && !!m.content.trim());
+  const unInvestorMemos = alive.filter((m) => !m.investorComment && !!m.content.trim());
 
   const tagsWithCount = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -2910,59 +2930,70 @@ export default function CrossMemos() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [alive, q, tag, selectedGenreId, genreTagNames, star]);
 
-  // レート制限および各種APIエラー対応の一括ギャル生成
-  const handleBulkGyaru = async () => {
-    const total = unGyaruMemos.length;
-    if (total === 0 || bulkGyaruLoading) return;
+  // ギャル・研究者・投資家の共通一括生成ハンドラー
+  const handleBulkGenerate = async (type: 'gyaru' | 'researcher' | 'investor') => {
+    let targets: typeof alive = [];
+    if (type === 'gyaru') targets = unGyaruMemos;
+    else if (type === 'researcher') targets = unResearcherMemos;
+    else if (type === 'investor') targets = unInvestorMemos;
 
-    setBulkGyaruLoading(true);
+    const total = targets.length;
+    if (total === 0 || bulkLoadingType) return;
+
+    setBulkLoadingType(type);
     let successCount = 0;
     let lastErrorMsg = '';
 
+    const typeName = type === 'gyaru' ? 'ギャル' : type === 'researcher' ? '研究者' : '投資家';
+
     for (let idx = 0; idx < total; idx++) {
-      const m = unGyaruMemos[idx];
+      const m = targets[idx];
       const percent = Math.round(((idx + 1) / total) * 100);
+
+      setBulkProgress({
+        current: idx + 1,
+        total,
+        percent,
+        label: `${typeName}コメント生成中…`,
+      });
 
       let comment = '';
       let success = false;
 
       for (let attempt = 0; attempt < 2; attempt++) {
-        toast.show(`ギャル返信中… ${idx + 1}/${total}件 (${percent}%)${attempt > 0 ? ' [再試行中]' : ''}`);
-
         try {
-          comment = await generateGyaruComment(m.content);
+          if (type === 'gyaru') comment = await generateGyaruComment(m.content);
+          else if (type === 'researcher') comment = await generateResearcherComment(m.content);
+          else if (type === 'investor') comment = await generateInvestorComment(m.content);
+
           if (comment) {
             success = true;
             break;
           }
         } catch (e: any) {
           lastErrorMsg = e?.message || String(e);
-          const is429 = lastErrorMsg.includes('429');
-          if (is429) {
-            toast.show(`API制限検出：30秒待機中… (${idx + 1}/${total}件)`);
-            await new Promise((resolve) => setTimeout(resolve, 30000));
-          } else {
-            await new Promise((resolve) => setTimeout(resolve, 3000));
-          }
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
 
       if (success && comment) {
-        await updateMemo(m.id, { gyaruComment: comment });
+        if (type === 'gyaru') await updateMemo(m.id, { gyaruComment: comment });
+        else if (type === 'researcher') await updateMemo(m.id, { researcherComment: comment });
+        else if (type === 'investor') await updateMemo(m.id, { investorComment: comment });
         successCount++;
       } else {
-        setBulkGyaruLoading(false);
-        alert(`【一括生成が一時停止しました】\n${successCount}件にギャルの一言を追加しました。\n\nエラー内容: ${lastErrorMsg}\n\n時間をおいてから再度「ギャル一括」を押すと続きから再開できます。`);
+        setBulkLoadingType(null);
+        setBulkProgress(null);
+        alert(
+          `【一括生成が一時停止しました】\n${successCount}件の${typeName}コメントを追加しました。\n\nエラー内容: ${lastErrorMsg}\n\n時間をおいてから再度押すと続きから再開できます。`
+        );
         return;
       }
-
-      // 15RPM（1分15回）制限を考慮し4.2秒待機
-      await new Promise((resolve) => setTimeout(resolve, 4200));
     }
 
-    setBulkGyaruLoading(false);
-    toast.show(`🎉 全${successCount}件に一言を追加しました！`);
-    alert(`【一括生成完了】\n全${successCount}件のメモにギャルの一言を正常に追加しました！`);
+    setBulkLoadingType(null);
+    setBulkProgress(null);
+    toast.show(`🎉 全${successCount}件に${typeName}コメントを追加しました！`);
   };
 
   return (
@@ -2973,31 +3004,154 @@ export default function CrossMemos() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
         ListHeaderComponent={
           <View style={{ marginHorizontal: -20 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 20 }}>
-              <Title sub={`${list.length}件 / 全${alive.length}件`}>横断メモ</Title>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {unGyaruMemos.length > 0 && (
-                  <Press onPress={handleBulkGyaru} disabled={bulkGyaruLoading}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FF69B422', borderColor: '#FF69B4', borderWidth: 1, paddingHorizontal: 10, height: 36, borderRadius: R.pill }}>
-                      {bulkGyaruLoading ? (
-                        <ActivityIndicator size="small" color="#FF69B4" />
-                      ) : (
-                        <>
-                          <Text style={{ fontSize: 12 }}>💖</Text>
-                          <Text style={{ color: '#FF69B4', fontWeight: '800', fontSize: 11.5 }}>ギャル一括({unGyaruMemos.length})</Text>
-                        </>
-                      )}
-                    </View>
-                  </Press>
-                )}
-                <Press onPress={() => setGenreManageOpen(true)}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.card, borderColor: C.line, borderWidth: 1, paddingHorizontal: 12, height: 36, borderRadius: R.pill }}>
-                    <Text style={{ fontSize: 13 }}>🏷️</Text>
-                    <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>ジャンル管理</Text>
+            <Title sub={`${list.length}件 / 全${alive.length}件`}>横断メモ</Title>
+
+            {/* 一括生成ボタン＆ジャンル管理ボタンのバー */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 8, marginBottom: 12 }}
+            >
+              {unGyaruMemos.length > 0 && (
+                <Press onPress={() => handleBulkGenerate('gyaru')} disabled={!!bulkLoadingType}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      backgroundColor: '#FF69B422',
+                      borderColor: '#FF69B4',
+                      borderWidth: 1,
+                      paddingHorizontal: 12,
+                      height: 36,
+                      borderRadius: R.pill,
+                    }}
+                  >
+                    {bulkLoadingType === 'gyaru' ? (
+                      <ActivityIndicator size="small" color="#FF69B4" />
+                    ) : (
+                      <Text style={{ fontSize: 12 }}>💖</Text>
+                    )}
+                    <Text style={{ color: '#FF69B4', fontWeight: '800', fontSize: 11.5 }}>
+                      ギャル一括({unGyaruMemos.length})
+                    </Text>
                   </View>
                 </Press>
+              )}
+
+              {unResearcherMemos.length > 0 && (
+                <Press onPress={() => handleBulkGenerate('researcher')} disabled={!!bulkLoadingType}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      backgroundColor: '#00BFFF22',
+                      borderColor: '#00BFFF',
+                      borderWidth: 1,
+                      paddingHorizontal: 12,
+                      height: 36,
+                      borderRadius: R.pill,
+                    }}
+                  >
+                    {bulkLoadingType === 'researcher' ? (
+                      <ActivityIndicator size="small" color="#00BFFF" />
+                    ) : (
+                      <Text style={{ fontSize: 12 }}>🔬</Text>
+                    )}
+                    <Text style={{ color: '#00BFFF', fontWeight: '800', fontSize: 11.5 }}>
+                      研究者一括({unResearcherMemos.length})
+                    </Text>
+                  </View>
+                </Press>
+              )}
+
+              {unInvestorMemos.length > 0 && (
+                <Press onPress={() => handleBulkGenerate('investor')} disabled={!!bulkLoadingType}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      backgroundColor: '#32CD3222',
+                      borderColor: '#32CD32',
+                      borderWidth: 1,
+                      paddingHorizontal: 12,
+                      height: 36,
+                      borderRadius: R.pill,
+                    }}
+                  >
+                    {bulkLoadingType === 'investor' ? (
+                      <ActivityIndicator size="small" color="#32CD32" />
+                    ) : (
+                      <Text style={{ fontSize: 12 }}>📈</Text>
+                    )}
+                    <Text style={{ color: '#32CD32', fontWeight: '800', fontSize: 11.5 }}>
+                      投資家一括({unInvestorMemos.length})
+                    </Text>
+                  </View>
+                </Press>
+              )}
+
+              <Press onPress={() => setGenreManageOpen(true)}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    backgroundColor: C.card,
+                    borderColor: C.line,
+                    borderWidth: 1,
+                    paddingHorizontal: 12,
+                    height: 36,
+                    borderRadius: R.pill,
+                  }}
+                >
+                  <Text style={{ fontSize: 13 }}>🏷️</Text>
+                  <Text style={{ color: C.text, fontWeight: '700', fontSize: 12.5 }}>ジャンル管理</Text>
+                </View>
+              </Press>
+            </ScrollView>
+
+            {/* 一括処理中のリアルタイムプログレス表示カード */}
+            {bulkProgress && (
+              <View
+                style={{
+                  backgroundColor: C.card,
+                  padding: 12,
+                  borderRadius: R.md,
+                  marginHorizontal: 20,
+                  marginBottom: 12,
+                  borderWidth: 1,
+                  borderColor: C.cyan,
+                }}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={{ color: C.text, fontWeight: '800', fontSize: 12.5 }}>
+                    {bulkProgress.label}
+                  </Text>
+                  <Text style={{ color: C.cyan, fontWeight: '900', fontSize: 12.5 }}>
+                    {bulkProgress.percent}% ({bulkProgress.current}/{bulkProgress.total}件)
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    height: 6,
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    borderRadius: 3,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <View
+                    style={{
+                      height: '100%',
+                      width: `${bulkProgress.percent}%`,
+                      backgroundColor: C.cyan,
+                    }}
+                  />
+                </View>
               </View>
-            </View>
+            )}
 
             <SearchBar value={q} onChangeText={setQ} placeholder="全部の本のメモを全文検索" />
 
@@ -3379,10 +3533,10 @@ function GenreManageSheet({ visible, onClose, tagsWithCount }: any) {
 
 const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY || '';
 
-// エージェントごとのOpenRouter指定モデル (:free 枠)
-const MODEL_GAL = 'google/gemini-2.0-flash-exp:free';
-const MODEL_RESEARCHER = 'deepseek/deepseek-r1:free';
-const MODEL_INVESTOR = 'qwen/qwen-2.5-72b-instruct:free';
+// エージェントごとのOpenRouter指定モデル
+const MODEL_GAL = 'google/gemini-2.0-flash-exp';
+const MODEL_RESEARCHER = 'deepseek/deepseek-chat'; // R1から思考なしの高速・超安価版V3へ変更
+const MODEL_INVESTOR = 'qwen/qwen-2.5-72b-instruct';
 
 async function fetchOpenRouter(prompt: string, model: string): Promise<string> {
   if (!OPENROUTER_API_KEY) {
@@ -3422,10 +3576,25 @@ function parseCommentJson(rawText: string): string {
       return obj.comment || '';
     }
   } catch (e) {
-    // パース失敗時
+    // JSONパース失敗時はフォールバック
   }
   return rawText.trim().replace(/^["'「」]|["'「」]$/g, '');
 }
+
+function extractJsonArray(rawText: string): any[] {
+  try {
+    const clean = rawText.replace(/```json|```/g, '').trim();
+    const match = clean.match(/\[[\s\S]*\]/);
+    if (match) return JSON.parse(match[0]);
+    return JSON.parse(clean);
+  } catch (e) {
+    return [];
+  }
+}
+
+// ----------------------------------------------------
+// プロンプト定義（全文反映）
+// ----------------------------------------------------
 
 const COMMON_PREFIX = `
 # 共通ルール
@@ -3458,6 +3627,9 @@ const COMMON_PREFIX = `
 {"comment": "ここに一言"}
 `;
 
+/**
+ * ギャル用生成処理
+ */
 export async function generateGyaruComment(content: string): Promise<string> {
   if (!content.trim()) return '';
 
@@ -3516,6 +3688,9 @@ ${content}
   return await generateWithValidation(prompt, MODEL_GAL);
 }
 
+/**
+ * 研究者用生成処理
+ */
 export async function generateResearcherComment(content: string): Promise<string> {
   if (!content.trim()) return '';
 
@@ -3575,6 +3750,9 @@ ${content}
   return await generateWithValidation(prompt, MODEL_RESEARCHER);
 }
 
+/**
+ * 投資家用生成処理
+ */
 export async function generateInvestorComment(content: string): Promise<string> {
   if (!content.trim()) return '';
 
@@ -3638,6 +3816,9 @@ ${content}
   return await generateWithValidation(prompt, MODEL_INVESTOR);
 }
 
+/**
+ * 文字数バリデーション（30〜50文字）＋リトライ処理
+ */
 async function generateWithValidation(prompt: string, model: string): Promise<string> {
   let currentPrompt = prompt;
 
@@ -3666,12 +3847,23 @@ async function generateWithValidation(prompt: string, model: string): Promise<st
   return parseCommentJson(fallback).slice(0, 50);
 }
 
-// 既存呼び出し（memos.tsx等）との互換用関数定義
+// 他コンポーネント用互換関数
 export async function suggestTagsForMemo(
-  content?: string,
-  existingTags?: string[]
+  content: string = '',
+  existingTags: string[] = []
 ): Promise<string[]> {
-  return [];
+  if (!content.trim()) return [];
+  const prompt = `
+以下の読書メモに適切なタグを2〜5個提案し、JSON文字列配列でのみ返してください。
+既存タグ: ${existingTags.join(', ')}
+メモ: ${content}
+`;
+  try {
+    const raw = await fetchOpenRouter(prompt, MODEL_GAL);
+    return extractJsonArray(raw);
+  } catch (e) {
+    return [];
+  }
 }
 
 export type DuplicateTagGroup = {
@@ -3680,9 +3872,19 @@ export type DuplicateTagGroup = {
 };
 
 export async function detectDuplicateTags(
-  allTags?: string[]
+  allTags: string[] = []
 ): Promise<DuplicateTagGroup[]> {
-  return [];
+  if (allTags.length < 2) return [];
+  const prompt = `
+以下のタグ一覧から表記揺れ・同義タグを検出し、[{"target":"代表","duplicates":["重複1"]}] のJSON配列のみで返してください。
+タグ: ${allTags.join(', ')}
+`;
+  try {
+    const raw = await fetchOpenRouter(prompt, MODEL_GAL);
+    return extractJsonArray(raw);
+  } catch (e) {
+    return [];
+  }
 }
 </file>
 
