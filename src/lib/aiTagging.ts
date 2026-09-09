@@ -8,7 +8,8 @@ const MODEL_RESEARCHER = 'deepseek/deepseek-chat';
 const MODEL_INVESTOR = 'qwen/qwen-2.5-72b-instruct';
 
 /**
- * Google AI Studio (本家 Gemini) 直接呼び出し関数 (完全無料・高レート)
+ * Google AI Studio (本家 Gemini) 直接呼び出し関数
+ * レート枠に余裕がある gemini-3.5-flash-lite (RPD: 500) を使用
  */
 async function fetchGeminiDirect(prompt: string): Promise<string> {
   const apiKey = GEMINI_API_KEY || OPENROUTER_API_KEY;
@@ -18,7 +19,7 @@ async function fetchGeminiDirect(prompt: string): Promise<string> {
 
   // GEMINI_API_KEYが設定されている場合は本家Google APIへ直接リクエスト
   if (GEMINI_API_KEY) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -41,7 +42,7 @@ async function fetchGeminiDirect(prompt: string): Promise<string> {
   }
 
   // フォールバック: OpenRouter経由
-  return await fetchOpenRouter(prompt, 'google/gemini-2.5-flash');
+  return await fetchOpenRouter(prompt, 'google/gemini-2.0-flash-exp');
 }
 
 /**
@@ -125,7 +126,7 @@ const COMMON_PREFIX = `
 `;
 
 /**
- * ギャル用生成処理 (本家 Gemini Direct 利用)
+ * ギャル用生成処理 (本家 Gemini 3.5 Flash Lite 利用)
  */
 export async function generateGyaruComment(content: string): Promise<string> {
   if (!content.trim()) return '';
@@ -249,7 +250,7 @@ async function generateWithValidation(prompt: string, modelOrDirect: string): Pr
   return parseCommentJson(fallback).slice(0, 50);
 }
 
-// タグ提案機能 (本家 Gemini Direct 利用)
+// タグ提案機能 (本家 Gemini 3.5 Flash Lite 利用)
 export async function suggestTagsForMemo(
   content: string = '',
   existingTags: string[] = []
@@ -268,7 +269,7 @@ export async function suggestTagsForMemo(
   }
 }
 
-// タグ重複検出機能 (本家 Gemini Direct 利用)
+// タグ重複検出機能 (本家 Gemini 3.5 Flash Lite 利用)
 export type DuplicateTagGroup = {
   target: string;
   duplicates: string[];
