@@ -1,6 +1,6 @@
 // File: src/app/(tabs)/index.tsx
 import React, { useMemo, useState } from 'react';
-import { FlatList, Image, Pressable, Text, View } from 'react-native';
+import { FlatList, Image, Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -20,6 +20,15 @@ export default function BookShelf() {
   const [tag, setTag] = useState('');
   const [open, setOpen] = useState(false);
 
+  // ウィンドウ幅を取得して、Google Keep風に列数を自動制御
+  const { width } = useWindowDimensions();
+  const numColumns = useMemo(() => {
+    if (width >= 1200) return 5;
+    if (width >= 900) return 4;
+    if (width >= 640) return 3;
+    return 2;
+  }, [width]);
+
   const alive = books.filter((b) => !b.deletedAt);
   const tags = uniqueTags(alive);
 
@@ -30,7 +39,6 @@ export default function BookShelf() {
       .filter((b) => (tag ? (b.tags || []).includes(tag) : true))
       .filter((b) => (kw ? (b.title + b.author + (b.wishReason || '')).toLowerCase().includes(kw) : true))
       .sort((a, b) => {
-        // 読みたい本の場合は優先度が高い順
         if (a.status === 'wish' && b.status === 'wish') {
           return (b.priority || 0) - (a.priority || 0);
         }
@@ -44,9 +52,10 @@ export default function BookShelf() {
   return (
     <Screen>
       <FlatList
+        key={`shelf-${numColumns}`}
         data={list}
         keyExtractor={(b) => b.id}
-        numColumns={2}
+        numColumns={numColumns}
         columnWrapperStyle={{ paddingHorizontal: 14, gap: 12 }}
         contentContainerStyle={{ paddingBottom: 40 }}
         ListHeaderComponent={
@@ -111,62 +120,67 @@ export default function BookShelf() {
         }
         ListEmptyComponent={<Empty emoji="📖" title="該当する本がありません" sub="右下の＋から「読みたい本」や「購入した本」を追加してみましょう。" />}
         renderItem={({ item }) => (
-          <Press onPress={() => router.push(`/book/${item.id}`)} style={{ flex: 1, marginBottom: 12 }}>
-            <View style={{ borderRadius: R.lg, overflow: 'hidden', backgroundColor: C.card, borderWidth: 1, borderColor: C.line }}>
+          <Press
+            onPress={() => router.push(`/book/${item.id}`)}
+            style={{ flex: 1, maxWidth: `${100 / numColumns}%`, marginBottom: 12 }}
+          >
+            <View style={{ borderRadius: R.lg, overflow: 'hidden', backgroundColor: C.card, borderWidth: 1, borderColor: C.line, height: '100%' }}>
               {item.coverUrl ? (
-                <Image source={{ uri: item.coverUrl }} style={{ width: '100%', height: 190 }} resizeMode="cover" />
+                <Image source={{ uri: item.coverUrl }} style={{ width: '100%', height: 210 }} resizeMode="cover" />
               ) : (
-                <LinearGradient colors={['#3A2E7A', '#16143A']} style={{ height: 190, alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+                <LinearGradient colors={['#3A2E7A', '#16143A']} style={{ height: 210, alignItems: 'center', justifyContent: 'center', padding: 12 }}>
                   <Text style={{ fontSize: 30 }}>{item.status === 'wish' ? '💡' : '📗'}</Text>
                   <Text numberOfLines={3} style={{ color: C.text, fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 8 }}>{item.title}</Text>
                 </LinearGradient>
               )}
-              <View style={{ padding: 12 }}>
-                <Text numberOfLines={2} style={{ color: C.text, fontWeight: '800', fontSize: 13.5, lineHeight: 19 }}>{item.title}</Text>
-                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 11, marginTop: 3 }}>{item.author || '著者未設定'}</Text>
+              <View style={{ padding: 12, flex: 1, justifyContent: 'space-between' }}>
+                <View>
+                  <Text numberOfLines={2} style={{ color: C.text, fontWeight: '800', fontSize: 13.5, lineHeight: 19 }}>{item.title}</Text>
+                  <Text numberOfLines={1} style={{ color: C.sub, fontSize: 11, marginTop: 3 }}>{item.author || '著者未設定'}</Text>
 
-                {/* 読む目的・きっかけメモ表示 */}
-                {!!item.wishReason && (
-                  <View style={{ backgroundColor: C.gold + '22', padding: 6, borderRadius: R.sm, marginTop: 6 }}>
-                    <Text numberOfLines={2} style={{ color: C.gold, fontSize: 10.5, fontWeight: '700' }}>
-                      💬 {item.wishReason}
-                    </Text>
-                  </View>
-                )}
-
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 9 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Text style={{ color: STATUS_COLOR[item.status], fontSize: 10.5, fontWeight: '900' }}>
-                      {STATUS_LABEL[item.status]}
-                    </Text>
-                    {item.status === 'wish' && !!item.priority && item.priority > 0 && (
-                      <Text style={{ color: C.gold, fontSize: 10, fontWeight: '900' }}>
-                        {'★'.repeat(item.priority)}
+                  {!!item.wishReason && (
+                    <View style={{ backgroundColor: C.gold + '22', padding: 6, borderRadius: R.sm, marginTop: 6 }}>
+                      <Text numberOfLines={2} style={{ color: C.gold, fontSize: 10.5, fontWeight: '700' }}>
+                        💬 {item.wishReason}
                       </Text>
-                    )}
-                  </View>
-                  <Text style={{ color: C.sub, fontSize: 10.5, fontWeight: '700' }}>📝 {countOf(item.id)}</Text>
+                    </View>
+                  )}
                 </View>
 
-                {/* ワンタップ昇格ボタン（読みたい ➔ 読書中） */}
-                {item.status === 'wish' && (
-                  <Pressable
-                    onPress={async (e) => {
-                      e.stopPropagation();
-                      await updateBook(item.id, { status: 'reading' });
-                      toast.show('「読書中」に変更しました！');
-                    }}
-                    style={{
-                      backgroundColor: C.primary,
-                      paddingVertical: 6,
-                      borderRadius: R.pill,
-                      alignItems: 'center',
-                      marginTop: 8,
-                    }}
-                  >
-                    <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 11 }}>📖 読書を開始する</Text>
-                  </Pressable>
-                )}
+                <View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 9 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Text style={{ color: STATUS_COLOR[item.status], fontSize: 10.5, fontWeight: '900' }}>
+                        {STATUS_LABEL[item.status]}
+                      </Text>
+                      {item.status === 'wish' && !!item.priority && item.priority > 0 && (
+                        <Text style={{ color: C.gold, fontSize: 10, fontWeight: '900' }}>
+                          {'★'.repeat(item.priority)}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={{ color: C.sub, fontSize: 10.5, fontWeight: '700' }}>📝 {countOf(item.id)}</Text>
+                  </View>
+
+                  {item.status === 'wish' && (
+                    <Pressable
+                      onPress={async (e) => {
+                        e.stopPropagation();
+                        await updateBook(item.id, { status: 'reading' });
+                        toast.show('「読書中」に変更しました！');
+                      }}
+                      style={{
+                        backgroundColor: C.primary,
+                        paddingVertical: 6,
+                        borderRadius: R.pill,
+                        alignItems: 'center',
+                        marginTop: 8,
+                      }}
+                    >
+                      <Text style={{ color: '#0B0A14', fontWeight: '900', fontSize: 11 }}>📖 読書を開始する</Text>
+                    </Pressable>
+                  )}
+                </View>
               </View>
             </View>
           </Press>
@@ -229,7 +243,7 @@ function AddBookSheet({ visible, onClose, onDone, addBook }: any) {
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="本を追加">
+    <Sheet visible={visible} onClose={() => { reset(); onClose(); }} title="本を追加">
       <Field label="ISBN（13桁・任意）" value={isbn} onChangeText={setIsbn} placeholder="9784…" />
       <Field label="タイトル" value={title} onChangeText={setTitle} placeholder="サピエンス全史" />
       <Field label="著者" value={author} onChangeText={setAuthor} placeholder="ユヴァル・ノア・ハラリ" />
@@ -270,7 +284,6 @@ function AddBookSheet({ visible, onClose, onDone, addBook }: any) {
         ))}
       </View>
 
-      {/* 読みたい場合専用：目的・理由メモ ＆ 優先度 */}
       {status === 'wish' && (
         <View style={{ backgroundColor: C.card, padding: 12, borderRadius: R.md, marginVertical: 10, borderWidth: 1, borderColor: C.gold }}>
           <Field
